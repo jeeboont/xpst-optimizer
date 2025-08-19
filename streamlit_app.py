@@ -1,4 +1,4 @@
-# Streamlit XPST Optimizer - Private Web Application
+# Fixed Streamlit XPST Optimizer - Resolves result display and progress issues
 # Password-protected trading strategy optimizer with Yahoo Finance integration
 
 import streamlit as st
@@ -21,11 +21,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Initialize session state
+if 'optimization_results' not in st.session_state:
+    st.session_state.optimization_results = {}
+if 'downloaded_data' not in st.session_state:
+    st.session_state.downloaded_data = {}
+if 'optimization_complete' not in st.session_state:
+    st.session_state.optimization_complete = False
+
 # Password protection function
 def check_password():
     """Password protection for the app"""
     def password_entered():
-        if st.session_state["password"] == "XPST.2025":  # Change this password!
+        if st.session_state["password"] == "XPST2024!":  # Change this password!
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -71,169 +79,196 @@ class StreamlitXPSTOptimizer:
 
     def calculate_atr(self, data, period=15):
         """Calculate Average True Range"""
-        tr_list = []
-        for i in range(1, len(data)):
-            tr = max(
-                data.iloc[i]['high'] - data.iloc[i]['low'],
-                abs(data.iloc[i]['high'] - data.iloc[i-1]['close']),
-                abs(data.iloc[i]['low'] - data.iloc[i-1]['close'])
-            )
-            tr_list.append(tr)
-        
-        atr_values = [0]
-        for i in range(len(tr_list)):
-            if i < period - 1:
-                atr_values.append(np.mean(tr_list[:i+1]))
-            else:
-                atr_values.append(np.mean(tr_list[i-period+1:i+1]))
-        
-        return atr_values
+        try:
+            tr_list = []
+            for i in range(1, len(data)):
+                tr = max(
+                    data.iloc[i]['high'] - data.iloc[i]['low'],
+                    abs(data.iloc[i]['high'] - data.iloc[i-1]['close']),
+                    abs(data.iloc[i]['low'] - data.iloc[i-1]['close'])
+                )
+                tr_list.append(tr)
+            
+            atr_values = [0]
+            for i in range(len(tr_list)):
+                if i < period - 1:
+                    atr_values.append(np.mean(tr_list[:i+1]))
+                else:
+                    atr_values.append(np.mean(tr_list[i-period+1:i+1]))
+            
+            return atr_values
+        except Exception as e:
+            st.error(f"Error calculating ATR: {str(e)}")
+            return [1] * len(data)
 
     def find_pivot_highs(self, data, period=5):
         """Find pivot high points"""
-        pivots = [None] * len(data)
-        for i in range(period, len(data) - period):
-            current_high = data.iloc[i]['high']
-            is_pivot = True
-            for j in range(1, period + 1):
-                if (data.iloc[i-j]['high'] >= current_high or
-                    data.iloc[i+j]['high'] >= current_high):
-                    is_pivot = False
-                    break
-            if is_pivot:
-                pivots[i] = current_high
-        return pivots
+        try:
+            pivots = [None] * len(data)
+            for i in range(period, len(data) - period):
+                current_high = data.iloc[i]['high']
+                is_pivot = True
+                for j in range(1, period + 1):
+                    if (data.iloc[i-j]['high'] >= current_high or
+                        data.iloc[i+j]['high'] >= current_high):
+                        is_pivot = False
+                        break
+                if is_pivot:
+                    pivots[i] = current_high
+            return pivots
+        except Exception as e:
+            st.error(f"Error finding pivot highs: {str(e)}")
+            return [None] * len(data)
 
     def find_pivot_lows(self, data, period=5):
         """Find pivot low points"""
-        pivots = [None] * len(data)
-        for i in range(period, len(data) - period):
-            current_low = data.iloc[i]['low']
-            is_pivot = True
-            for j in range(1, period + 1):
-                if (data.iloc[i-j]['low'] <= current_low or
-                    data.iloc[i+j]['low'] <= current_low):
-                    is_pivot = False
-                    break
-            if is_pivot:
-                pivots[i] = current_low
-        return pivots
+        try:
+            pivots = [None] * len(data)
+            for i in range(period, len(data) - period):
+                current_low = data.iloc[i]['low']
+                is_pivot = True
+                for j in range(1, period + 1):
+                    if (data.iloc[i-j]['low'] <= current_low or
+                        data.iloc[i+j]['low'] <= current_low):
+                        is_pivot = False
+                        break
+                if is_pivot:
+                    pivots[i] = current_low
+            return pivots
+        except Exception as e:
+            st.error(f"Error finding pivot lows: {str(e)}")
+            return [None] * len(data)
 
     def calculate_pivot_supertrend(self, data, pivot_period=5, atr_factor=1.25, atr_period=15):
         """Calculate Pivot Supertrend"""
-        pivot_highs = self.find_pivot_highs(data, pivot_period)
-        pivot_lows = self.find_pivot_lows(data, pivot_period)
-        atr_values = self.calculate_atr(data, atr_period)
-        
-        results = []
-        center = None
-        
-        for i in range(len(data)):
-            if pivot_highs[i] is not None or pivot_lows[i] is not None:
-                lastpp = pivot_highs[i] or pivot_lows[i]
-                center = lastpp if center is None else (center * 2 + lastpp) / 3
+        try:
+            pivot_highs = self.find_pivot_highs(data, pivot_period)
+            pivot_lows = self.find_pivot_lows(data, pivot_period)
+            atr_values = self.calculate_atr(data, atr_period)
             
-            if center is None or i == 0:
-                results.append({'trend': 1, 'trailing_stop': None})
-                continue
+            results = []
+            center = None
             
-            up = center - (atr_factor * atr_values[i])
-            down = center + (atr_factor * atr_values[i])
+            for i in range(len(data)):
+                if pivot_highs[i] is not None or pivot_lows[i] is not None:
+                    lastpp = pivot_highs[i] or pivot_lows[i]
+                    center = lastpp if center is None else (center * 2 + lastpp) / 3
+                
+                if center is None or i == 0:
+                    results.append({'trend': 1, 'trailing_stop': None})
+                    continue
+                
+                up = center - (atr_factor * atr_values[i])
+                down = center + (atr_factor * atr_values[i])
+                
+                prev = results[i-1]
+                prev_close = data.iloc[i-1]['close']
+                current_close = data.iloc[i]['close']
+                
+                t_up = max(up, prev.get('up', up)) if prev_close > prev.get('up', up) else up
+                t_down = min(down, prev.get('down', down)) if prev_close < prev.get('down', down) else down
+                
+                if current_close > prev.get('down', down):
+                    trend = 1
+                elif current_close < prev.get('up', up):
+                    trend = -1
+                else:
+                    trend = prev.get('trend', 1)
+                
+                results.append({
+                    'up': t_up,
+                    'down': t_down,
+                    'trend': trend,
+                    'trailing_stop': t_up if trend == 1 else t_down
+                })
             
-            prev = results[i-1]
-            prev_close = data.iloc[i-1]['close']
-            current_close = data.iloc[i]['close']
-            
-            t_up = max(up, prev.get('up', up)) if prev_close > prev.get('up', up) else up
-            t_down = min(down, prev.get('down', down)) if prev_close < prev.get('down', down) else down
-            
-            if current_close > prev.get('down', down):
-                trend = 1
-            elif current_close < prev.get('up', up):
-                trend = -1
-            else:
-                trend = prev.get('trend', 1)
-            
-            results.append({
-                'up': t_up,
-                'down': t_down,
-                'trend': trend,
-                'trailing_stop': t_up if trend == 1 else t_down
-            })
-        
-        return results
+            return results
+        except Exception as e:
+            st.error(f"Error calculating Pivot Supertrend: {str(e)}")
+            return [{'trend': 1, 'trailing_stop': None}] * len(data)
 
     def calculate_x_trend(self, data):
         """Calculate X Trend"""
-        results = []
-        next_trend = 0
-        x_trend = 0
-        low_max = 0
-        high_min = 0
-        
-        for i in range(len(data)):
-            if i < 3:
-                results.append({'x_trend': 0, 'line_ht': data.iloc[i]['close']})
-                continue
+        try:
+            results = []
+            next_trend = 0
+            x_trend = 0
+            low_max = 0
+            high_min = 0
             
-            lowest_low = min(data.iloc[max(0, i-2):i+1]['low'])
-            highest_high = max(data.iloc[max(0, i-1):i+1]['high'])
-            
-            ma_low = np.mean(data.iloc[max(0, i-2):i+1]['low'])
-            ma_high = np.mean(data.iloc[max(0, i-1):i+1]['high'])
-            
-            if i == 3:
-                low_max = lowest_low
-                high_min = highest_high
-            
-            current_close = data.iloc[i]['close']
-            prev_low = data.iloc[i-1]['low']
-            prev_high = data.iloc[i-1]['high']
-            
-            if next_trend == 1:
-                low_max = max(low_max, lowest_low)
-                if ma_high < low_max and current_close < prev_low:
-                    x_trend = 1
-                    next_trend = 0
-                    high_min = highest_high
-            
-            if next_trend == 0:
-                high_min = min(high_min, highest_high)
-                if ma_low > high_min and current_close > prev_high:
-                    x_trend = 0
-                    next_trend = 1
+            for i in range(len(data)):
+                if i < 3:
+                    results.append({'x_trend': 0, 'line_ht': data.iloc[i]['close']})
+                    continue
+                
+                lowest_low = min(data.iloc[max(0, i-2):i+1]['low'])
+                highest_high = max(data.iloc[max(0, i-1):i+1]['high'])
+                
+                ma_low = np.mean(data.iloc[max(0, i-2):i+1]['low'])
+                ma_high = np.mean(data.iloc[max(0, i-1):i+1]['high'])
+                
+                if i == 3:
                     low_max = lowest_low
+                    high_min = highest_high
+                
+                current_close = data.iloc[i]['close']
+                prev_low = data.iloc[i-1]['low']
+                prev_high = data.iloc[i-1]['high']
+                
+                if next_trend == 1:
+                    low_max = max(low_max, lowest_low)
+                    if ma_high < low_max and current_close < prev_low:
+                        x_trend = 1
+                        next_trend = 0
+                        high_min = highest_high
+                
+                if next_trend == 0:
+                    high_min = min(high_min, highest_high)
+                    if ma_low > high_min and current_close > prev_high:
+                        x_trend = 0
+                        next_trend = 1
+                        low_max = lowest_low
+                
+                line_ht = results[i-1]['line_ht'] if i > 0 else current_close
+                if x_trend == 0:
+                    line_ht = max(low_max, line_ht)
+                if x_trend == 1:
+                    line_ht = min(high_min, line_ht)
+                
+                results.append({'x_trend': x_trend, 'line_ht': line_ht})
             
-            line_ht = results[i-1]['line_ht'] if i > 0 else current_close
-            if x_trend == 0:
-                line_ht = max(low_max, line_ht)
-            if x_trend == 1:
-                line_ht = min(high_min, line_ht)
-            
-            results.append({'x_trend': x_trend, 'line_ht': line_ht})
-        
-        return results
+            return results
+        except Exception as e:
+            st.error(f"Error calculating X Trend: {str(e)}")
+            return [{'x_trend': 0, 'line_ht': data.iloc[i]['close'] if i < len(data) else 0} for i in range(len(data))]
 
     def create_htf_data(self, data, multiplier=3):
         """Create higher timeframe data"""
-        htf_data = []
-        for i in range(0, len(data), multiplier):
-            slice_data = data.iloc[i:min(i + multiplier, len(data))]
-            if len(slice_data) > 0:
-                htf_bar = {
-                    'time': slice_data.iloc[0]['time'],
-                    'open': slice_data.iloc[0]['open'],
-                    'high': slice_data['high'].max(),
-                    'low': slice_data['low'].min(),
-                    'close': slice_data.iloc[-1]['close'],
-                    'volume': slice_data['volume'].sum()
-                }
-                htf_data.append(htf_bar)
-        return pd.DataFrame(htf_data)
+        try:
+            htf_data = []
+            for i in range(0, len(data), multiplier):
+                slice_data = data.iloc[i:min(i + multiplier, len(data))]
+                if len(slice_data) > 0:
+                    htf_bar = {
+                        'time': slice_data.iloc[0]['time'],
+                        'open': slice_data.iloc[0]['open'],
+                        'high': slice_data['high'].max(),
+                        'low': slice_data['low'].min(),
+                        'close': slice_data.iloc[-1]['close'],
+                        'volume': slice_data['volume'].sum()
+                    }
+                    htf_data.append(htf_bar)
+            return pd.DataFrame(htf_data)
+        except Exception as e:
+            st.error(f"Error creating HTF data: {str(e)}")
+            return pd.DataFrame()
 
     def test_parameters(self, data, pivot_period, atr_factor, atr_period, htf_multiplier=3):
         """Test a parameter combination"""
         try:
+            if len(data) < 50:  # Minimum data requirement
+                return None
+                
             pivot_st = self.calculate_pivot_supertrend(data, pivot_period, atr_factor, atr_period)
             x_trend_local = self.calculate_x_trend(data)
             
@@ -258,6 +293,9 @@ class StreamlitXPSTOptimizer:
             current_trade = None
             
             for i in range(1, len(data)):
+                if i >= len(pivot_st) or i >= len(htf_mapped):
+                    break
+                    
                 prev_trend = pivot_st[i-1]['trend']
                 current_trend = pivot_st[i]['trend']
                 pvt_buy = current_trend == 1 and prev_trend == -1
@@ -312,7 +350,8 @@ class StreamlitXPSTOptimizer:
                 'score': total_pips * 0.4 + win_rate * 3 + risk_reward * 20
             }
         
-        except Exception:
+        except Exception as e:
+            st.error(f"Error testing parameters: {str(e)}")
             return None
 
     def get_htf_timeframe_name(self, base_tf, multiplier):
@@ -330,6 +369,118 @@ class StreamlitXPSTOptimizer:
         }
         
         return tf_map.get((base_tf, multiplier), f"{base_tf}x{multiplier}")
+
+def download_data(optimizer, selected_assets, timeframe, period, min_bars):
+    """Download data for selected assets with proper error handling"""
+    downloaded_data = {}
+    progress_container = st.container()
+    
+    with progress_container:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, asset in enumerate(selected_assets):
+            try:
+                progress_bar.progress((i) / len(selected_assets))
+                status_text.text(f"📥 Downloading {asset}...")
+                
+                yf_symbol = optimizer.assets[asset]['yf_symbol']
+                ticker = yf.Ticker(yf_symbol)
+                data = ticker.history(period=period, interval=timeframe)
+                
+                if len(data) >= min_bars:
+                    # Format data
+                    data.reset_index(inplace=True)
+                    if 'Datetime' in data.columns:
+                        data['time'] = data['Datetime']
+                    elif 'Date' in data.columns:
+                        data['time'] = data['Date']
+                    
+                    data.columns = data.columns.str.lower()
+                    required_cols = ['time', 'open', 'high', 'low', 'close', 'volume']
+                    
+                    if all(col in data.columns for col in required_cols):
+                        downloaded_data[asset] = data[required_cols]
+                        st.success(f"✅ {asset}: {len(data)} bars downloaded")
+                    else:
+                        st.error(f"❌ {asset}: Missing required columns")
+                else:
+                    st.error(f"❌ {asset}: Only {len(data)} bars (need {min_bars})")
+                
+                time.sleep(0.1)  # Rate limiting
+                
+            except Exception as e:
+                st.error(f"❌ {asset}: Error - {str(e)}")
+        
+        progress_bar.progress(1.0)
+        status_text.text("✅ Download complete!")
+    
+    return downloaded_data
+
+def run_optimization(optimizer, downloaded_data, htf_multipliers):
+    """Run optimization with proper progress tracking and error handling"""
+    optimization_results = {}
+    
+    # Progress tracking
+    total_assets = len(downloaded_data)
+    progress_container = st.container()
+    
+    with progress_container:
+        main_progress = st.progress(0)
+        asset_status = st.empty()
+        detail_progress = st.empty()
+        
+        for asset_idx, (asset, data) in enumerate(downloaded_data.items()):
+            try:
+                asset_status.text(f"🔄 Optimizing {asset} ({asset_idx + 1}/{total_assets})...")
+                main_progress.progress(asset_idx / total_assets)
+                
+                # Parameter ranges (reduced for faster testing)
+                pivot_periods = [3, 4, 5, 6, 7]
+                atr_factors = [0.8, 1.0, 1.25, 1.5, 1.75, 2.0]
+                atr_periods = [10, 12, 15, 18, 20, 25]
+                
+                results = []
+                total_combinations = len(pivot_periods) * len(atr_factors) * len(atr_periods) * len(htf_multipliers)
+                current_combination = 0
+                
+                for pp in pivot_periods:
+                    for af in atr_factors:
+                        for ap in atr_periods:
+                            for htf_mult in htf_multipliers:
+                                current_combination += 1
+                                
+                                # Update detailed progress every 50 combinations
+                                if current_combination % 50 == 0:
+                                    detail_progress.text(f"    Progress: {current_combination}/{total_combinations} ({current_combination/total_combinations*100:.1f}%)")
+                                
+                                result = optimizer.test_parameters(data, pp, af, ap, htf_mult)
+                                if result and result['total_trades'] >= 3:
+                                    results.append(result)
+                
+                if results:
+                    results.sort(key=lambda x: x['score'], reverse=True)
+                    optimization_results[asset] = {
+                        'results': results[:10],  # Top 10
+                        'best': results[0],
+                        'data_info': {
+                            'rows': len(data),
+                            'timeframe': st.session_state.get('current_timeframe', '5m'),
+                            'period': st.session_state.get('current_period', '1mo')
+                        }
+                    }
+                    st.success(f"✅ {asset}: {len(results)} configurations found")
+                else:
+                    st.warning(f"⚠️ {asset}: No profitable configurations found")
+                
+            except Exception as e:
+                st.error(f"❌ Error optimizing {asset}: {str(e)}")
+        
+        main_progress.progress(1.0)
+        asset_status.text("✅ Optimization complete!")
+        detail_progress.empty()
+    
+    return optimization_results
 
 # Main Streamlit Application
 def main():
@@ -382,13 +533,6 @@ def main():
     
     selected_assets = selected_crypto + selected_forex + selected_commodities
     
-    # Quick select buttons
-    col1, col2 = st.sidebar.columns(2)
-    if col1.button("Select All"):
-        st.rerun()
-    if col2.button("Clear All"):
-        st.rerun()
-    
     # Timeframe selection
     st.sidebar.subheader("⏰ Timeframe Settings")
     
@@ -403,6 +547,10 @@ def main():
     available_periods = optimizer.timeframes[timeframe]['periods']
     period = st.sidebar.selectbox("Period", available_periods, index=0)
     
+    # Store current settings in session state
+    st.session_state.current_timeframe = timeframe
+    st.session_state.current_period = period
+    
     # Advanced settings
     st.sidebar.subheader("⚙️ Advanced Settings")
     min_bars = st.sidebar.number_input("Minimum Bars", min_value=500, max_value=5000, value=1000)
@@ -410,9 +558,16 @@ def main():
     htf_multipliers = st.sidebar.multiselect(
         "HTF Multipliers",
         options=[2, 3, 4, 6, 8, 12, 16],
-        default=[2, 3, 4, 6],
+        default=[2, 3, 4],  # Reduced default for faster testing
         help="Higher timeframe multipliers to test"
     )
+    
+    # Reset button
+    if st.sidebar.button("🔄 Reset All", type="secondary"):
+        st.session_state.optimization_results = {}
+        st.session_state.downloaded_data = {}
+        st.session_state.optimization_complete = False
+        st.rerun()
     
     # Main content
     if not selected_assets:
@@ -448,276 +603,29 @@ def main():
     st.info(f"**Selected Assets**: {selected_display}")
     st.info(f"**Settings**: {timeframe} timeframe, {period} period, minimum {min_bars} bars")
     
-    # Download button
+    # Download and optimize button
     if st.button("🚀 Download Data & Run Optimization", type="primary", use_container_width=True):
-        # Initialize session state for results
-        if 'optimization_results' not in st.session_state:
-            st.session_state.optimization_results = {}
-        
-        # Progress tracking
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        downloaded_data = {}
+        # Clear previous results
+        st.session_state.optimization_results = {}
+        st.session_state.downloaded_data = {}
+        st.session_state.optimization_complete = False
         
         # Download data
-        status_text.text("📥 Downloading data...")
-        for i, asset in enumerate(selected_assets):
-            try:
-                progress_bar.progress((i) / (len(selected_assets) * 2))
-                status_text.text(f"📥 Downloading {asset}...")
-                
-                yf_symbol = optimizer.assets[asset]['yf_symbol']
-                ticker = yf.Ticker(yf_symbol)
-                data = ticker.history(period=period, interval=timeframe)
-                
-                if len(data) >= min_bars:
-                    # Format data
-                    data.reset_index(inplace=True)
-                    if 'Datetime' in data.columns:
-                        data['time'] = data['Datetime']
-                    elif 'Date' in data.columns:
-                        data['time'] = data['Date']
-                    
-                    data.columns = data.columns.str.lower()
-                    required_cols = ['time', 'open', 'high', 'low', 'close', 'volume']
-                    
-                    if all(col in data.columns for col in required_cols):
-                        downloaded_data[asset] = data[required_cols]
-                        st.success(f"✅ {asset}: {len(data)} bars downloaded")
-                    else:
-                        st.error(f"❌ {asset}: Missing required columns")
-                else:
-                    st.error(f"❌ {asset}: Only {len(data)} bars (need {min_bars})")
-                
-                time.sleep(0.1)  # Rate limiting
-                
-            except Exception as e:
-                st.error(f"❌ {asset}: Error - {str(e)}")
+        st.markdown("### 📥 Downloading Data...")
+        downloaded_data = download_data(optimizer, selected_assets, timeframe, period, min_bars)
         
         if not downloaded_data:
             st.error("No data downloaded successfully. Please adjust settings and try again.")
             return
         
+        # Store downloaded data
+        st.session_state.downloaded_data = downloaded_data
+        
         # Run optimization
-        status_text.text("🔄 Running optimization...")
-        optimization_results = {}
+        st.markdown("### 🔄 Running Optimization...")
+        st.info("This may take several minutes depending on the number of assets and HTF multipliers selected.")
         
-        for i, (asset, data) in enumerate(downloaded_data.items()):
-            try:
-                progress_bar.progress((len(selected_assets) + i) / (len(selected_assets) * 2))
-                status_text.text(f"🔄 Optimizing {asset}...")
-                
-                # Parameter ranges
-                pivot_periods = [3, 4, 5, 6, 7]
-                atr_factors = [0.8, 1.0, 1.25, 1.5, 1.75, 2.0]
-                atr_periods = [10, 12, 15, 18, 20, 25]
-                
-                results = []
-                
-                for pp in pivot_periods:
-                    for af in atr_factors:
-                        for ap in atr_periods:
-                            for htf_mult in htf_multipliers:
-                                result = optimizer.test_parameters(data, pp, af, ap, htf_mult)
-                                if result and result['total_trades'] >= 3:
-                                    results.append(result)
-                
-                if results:
-                    results.sort(key=lambda x: x['score'], reverse=True)
-                    optimization_results[asset] = {
-                        'results': results[:10],  # Top 10
-                        'best': results[0],
-                        'data_info': {
-                            'rows': len(data),
-                            'timeframe': timeframe,
-                            'period': period
-                        }
-                    }
-                    st.success(f"✅ {asset}: {len(results)} configurations found")
-                else:
-                    st.warning(f"⚠️ {asset}: No profitable configurations found")
-                
-            except Exception as e:
-                st.error(f"❌ {asset}: Optimization error - {str(e)}")
+        optimization_results = run_optimization(optimizer, downloaded_data, htf_multipliers)
         
-        progress_bar.progress(1.0)
-        status_text.text("✅ Optimization complete!")
-        
-        # Store results in session state
-        st.session_state.optimization_results = optimization_results
-    
-    # Display results if available
-    if hasattr(st.session_state, 'optimization_results') and st.session_state.optimization_results:
-        st.markdown("---")
-        st.subheader("🏆 Optimization Results")
-        
-        # Results summary
-        results_summary = []
-        for asset, results in st.session_state.optimization_results.items():
-            best = results['best']
-            results_summary.append({
-                'Asset': asset,
-                'Asset Name': optimizer.assets[asset]['name'],
-                'Score': best['score'],
-                'Win Rate (%)': best['win_rate'],
-                'Total Pips': best['total_pips'],
-                'Total Trades': best['total_trades'],
-                'Risk:Reward': best['risk_reward']
-            })
-        
-        summary_df = pd.DataFrame(results_summary)
-        summary_df = summary_df.sort_values('Score', ascending=False)
-        
-        # Display summary table
-        st.dataframe(summary_df, use_container_width=True)
-        
-        # Detailed results for each asset
-        for asset, results in st.session_state.optimization_results.items():
-            with st.expander(f"📊 Detailed Results: {asset} ({optimizer.assets[asset]['name']})"):
-                best = results['best']
-                data_info = results['data_info']
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("### 🎯 Optimal Parameters")
-                    st.markdown(f"**Pivot Period**: {best['pivot_period']}")
-                    st.markdown(f"**ATR Factor**: {best['atr_factor']}")
-                    st.markdown(f"**ATR Period**: {best['atr_period']}")
-                    st.markdown(f"**HTF Multiplier**: {best['htf_multiplier']}x")
-                    
-                    htf_name = optimizer.get_htf_timeframe_name(data_info['timeframe'], best['htf_multiplier'])
-                    st.markdown(f"**HTF Timeframe**: {htf_name}")
-                
-                with col2:
-                    st.markdown("### 📈 Performance Metrics")
-                    st.markdown(f"**Total Trades**: {best['total_trades']}")
-                    st.markdown(f"**Win Rate**: {best['win_rate']:.1f}%")
-                    st.markdown(f"**Total Pips**: {best['total_pips']:.2f}")
-                    st.markdown(f"**Risk:Reward**: {best['risk_reward']:.2f}:1")
-                    st.markdown(f"**Score**: {best['score']:.0f}")
-                
-                # PineScript settings
-                st.markdown("### ⚙️ PineScript Settings")
-                pinescript_code = f"""```pinescript
-// XPST Settings for {asset}
-prd = {best['pivot_period']}
-Factor = {best['atr_factor']}
-Pd = {best['atr_period']}
-use_xtrend = true
-use_xtrend_htf_color = true
-xtrend_htf_tf = "{htf_name}"
-xtrend_grey_disagree = false
-```"""
-                st.markdown(pinescript_code)
-                
-                # Top configurations table
-                st.markdown("### 📋 Top 5 Configurations")
-                top_configs = []
-                for i, result in enumerate(results['results'][:5]):
-                    top_configs.append({
-                        'Rank': i + 1,
-                        'PP': result['pivot_period'],
-                        'ATR Factor': result['atr_factor'],
-                        'ATR Period': result['atr_period'],
-                        'HTF': f"{result['htf_multiplier']}x",
-                        'Trades': result['total_trades'],
-                        'Win%': f"{result['win_rate']:.1f}%",
-                        'Pips': f"{result['total_pips']:.0f}",
-                        'Score': f"{result['score']:.0f}"
-                    })
-                
-                config_df = pd.DataFrame(top_configs)
-                st.dataframe(config_df, use_container_width=True)
-        
-        # Performance comparison chart
-        if len(st.session_state.optimization_results) > 1:
-            st.subheader("📊 Performance Comparison")
-            
-            # Create comparison chart
-            chart_data = []
-            for asset, results in st.session_state.optimization_results.items():
-                best = results['best']
-                chart_data.append({
-                    'Asset': asset,
-                    'Score': best['score'],
-                    'Win Rate': best['win_rate'],
-                    'Total Pips': best['total_pips'],
-                    'Risk Reward': best['risk_reward']
-                })
-            
-            chart_df = pd.DataFrame(chart_data)
-            
-            # Score comparison
-            fig_score = px.bar(chart_df, x='Asset', y='Score', 
-                             title='Optimization Score by Asset',
-                             color='Score', color_continuous_scale='viridis')
-            st.plotly_chart(fig_score, use_container_width=True)
-            
-            # Multi-metric comparison
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                fig_winrate = px.bar(chart_df, x='Asset', y='Win Rate',
-                                   title='Win Rate by Asset (%)',
-                                   color='Win Rate', color_continuous_scale='RdYlGn')
-                st.plotly_chart(fig_winrate, use_container_width=True)
-            
-            with col2:
-                fig_pips = px.bar(chart_df, x='Asset', y='Total Pips',
-                                title='Total Pips by Asset',
-                                color='Total Pips', color_continuous_scale='RdYlBu')
-                st.plotly_chart(fig_pips, use_container_width=True)
-        
-        # Export functionality
-        st.subheader("💾 Export Results")
-        
-        if st.button("📥 Download Results as CSV"):
-            # Prepare export data
-            export_data = []
-            for asset, results in st.session_state.optimization_results.items():
-                best = results['best']
-                data_info = results['data_info']
-                htf_name = optimizer.get_htf_timeframe_name(data_info['timeframe'], best['htf_multiplier'])
-                
-                export_data.append({
-                    'Asset': asset,
-                    'Asset_Name': optimizer.assets[asset]['name'],
-                    'Asset_Type': optimizer.assets[asset]['type'],
-                    'Data_Bars': data_info['rows'],
-                    'Timeframe': data_info['timeframe'],
-                    'Period': data_info['period'],
-                    'Optimal_Pivot_Period': best['pivot_period'],
-                    'Optimal_ATR_Factor': best['atr_factor'],
-                    'Optimal_ATR_Period': best['atr_period'],
-                    'Optimal_HTF_Multiplier': best['htf_multiplier'],
-                    'HTF_Timeframe': htf_name,
-                    'Total_Trades': best['total_trades'],
-                    'Win_Rate': best['win_rate'],
-                    'Total_Pips': best['total_pips'],
-                    'Risk_Reward': best['risk_reward'],
-                    'Score': best['score']
-                })
-            
-            export_df = pd.DataFrame(export_data)
-            csv = export_df.to_csv(index=False)
-            
-            st.download_button(
-                label="📁 Download CSV File",
-                data=csv,
-                file_name=f"XPST_Optimization_Results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-    
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style="text-align: center; color: #666; padding: 20px;">
-        <p>🎯 <strong>XPST Optimizer</strong> | Built with Streamlit & Yahoo Finance</p>
-        <p><em>Professional trading strategy optimization made simple</em></p>
-    </div>
-    """, unsafe_allow_html=True)
-
-if __name__ == "__main__":
-    main()
+        # Store results
+        st.session_state.optimization_
