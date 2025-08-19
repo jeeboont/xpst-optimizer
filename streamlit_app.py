@@ -358,7 +358,7 @@ def main():
     # Timeframe selection
     timeframe = st.sidebar.selectbox(
         "Timeframe",
-        options=['1m', '5m', '15m', '30m', '1h'],
+        options=['1m', '5m', '15m', '30m', '1h', '4h', '1d'],
         index=2  # Default to 15m
     )
     
@@ -367,7 +367,9 @@ def main():
         '5m': ['1d', '5d', '1mo'],
         '15m': ['1d', '5d', '1mo', '3mo'],
         '30m': ['5d', '1mo', '3mo', '6mo'],
-        '1h': ['1mo', '3mo', '6mo', '1y']
+        '1h': ['1mo', '3mo', '6mo', '1y'],
+        '4h': ['1mo', '3mo', '6mo', '1y', '2y'],
+        '1d': ['6mo', '1y', '2y', '5y', '10y', 'max']
     }
     
     available_periods = timeframe_periods[timeframe]
