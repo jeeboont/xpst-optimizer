@@ -350,6 +350,164 @@ def calculate_ema(data, period=21):
     except:
         return data['close'].tolist()
 
+def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thresholds, use_ema, ema_periods):
+    """Run intelligent sequential optimization for Fast Mode"""
+    results = []
+    
+    st.markdown(f"#### 🔄 Sequential Optimization for {asset}")
+    
+    # Stage 1: Find optimal Pivot Period + ATR Factor combination
+    st.caption("🎯 Stage 1: Optimizing Pivot Period + ATR Factor...")
+    stage1_results = []
+    
+    pivot_options = [3, 5, 7]
+    atr_factor_options = [1.0, 1.25, 1.5]
+    
+    for pp in pivot_options:
+        for af in atr_factor_options:
+            result = test_parameters(data, pp, af, 15, 3, False, 25, False, 21)  # Fixed defaults
+            if result and result['total_trades'] >= 3:
+                stage1_results.append((result['score'], pp, af))
+    
+    if not stage1_results:
+        st.error(f"❌ {asset}: No valid Stage 1 results")
+        return []
+    
+    # Get best Pivot + ATR combination
+    stage1_results.sort(reverse=True)
+    best_pp, best_af = stage1_results[0][1], stage1_results[0][2]
+    st.success(f"✅ Stage 1: Best Pivot={best_pp}, ATR Factor={best_af} (Score: {stage1_results[0][0]:.0f})")
+    
+    # Stage 2: Optimize ATR Period with best Pivot + ATR Factor
+    st.caption("📊 Stage 2: Optimizing ATR Period...")
+    stage2_results = []
+    
+    atr_period_options = [10, 15, 20]
+    
+    for ap in atr_period_options:
+        result = test_parameters(data, best_pp, best_af, ap, 3, False, 25, False, 21)  # Fixed HTF=3
+        if result and result['total_trades'] >= 3:
+            stage2_results.append((result['score'], ap))
+    
+    if not stage2_results:
+        best_ap = 15  # Default fallback
+    else:
+        stage2_results.sort(reverse=True)
+        best_ap = stage2_results[0][1]
+        st.success(f"✅ Stage 2: Best ATR Period={best_ap} (Score: {stage2_results[0][0]:.0f})")
+    
+    # Stage 3: Optimize HTF with best core parameters
+    st.caption("🔄 Stage 3: Optimizing HTF Multiplier...")
+    stage3_results = []
+    
+    for htf in htf_multipliers[:3]:  # Limit to first 3 for speed
+        result = test_parameters(data, best_pp, best_af, best_ap, htf, False, 25, False, 21)
+        if result and result['total_trades'] >= 3:
+            stage3_results.append((result['score'], htf))
+    
+    if not stage3_results:
+        best_htf = 3  # Default fallback
+    else:
+        stage3_results.sort(reverse=True)
+        best_htf = stage3_results[0][1]
+        st.success(f"✅ Stage 3: Best HTF Multiplier={best_htf}x (Score: {stage3_results[0][0]:.0f})")
+    
+    # Add best core configuration to results
+    best_core_result = test_parameters(data, best_pp, best_af, best_ap, best_htf, False, 25, False, 21)
+    if best_core_result:
+        results.append(best_core_result)
+    
+    # Stage 4: Optimize ADX if enabled
+    if use_adx:
+        st.caption("🎲 Stage 4: Optimizing ADX Filter...")
+        best_adx_score = 0
+        best_adx_threshold = 25
+        
+        for threshold in [20, 25, 30]:  # Limited set for speed
+            result = test_parameters(data, best_pp, best_af, best_ap, best_htf, True, threshold, False, 21)
+            if result and result['total_trades'] >= 3:
+                results.append(result)
+                if result['score'] > best_adx_score:
+                    best_adx_score = result['score']
+                    best_adx_threshold = threshold
+        
+        if best_adx_score > 0:
+            st.success(f"✅ Stage 4: Best ADX Threshold={best_adx_threshold} (Score: {best_adx_score:.0f})")
+    
+    # Stage 5: Optimize EMA if enabled
+    if use_ema:
+        st.caption("📈 Stage 5: Optimizing EMA Filter...")
+        best_ema_score = 0
+        best_ema_period = 21
+        
+        for period in [21, 50, 100]:  # Limited set for speed
+            result = test_parameters(data, best_pp, best_af, best_ap, best_htf, False, 25, True, period)
+            if result and result['total_trades'] >= 3:
+                results.append(result)
+                if result['score'] > best_ema_score:
+                    best_ema_score = result['score']
+                    best_ema_period = period
+        
+        if best_ema_score > 0:
+            st.success(f"✅ Stage 5: Best EMA Period={best_ema_period} (Score: {best_ema_score:.0f})")
+    
+    # Stage 6: Test combined filters if both enabled
+    if use_adx and use_ema:
+        st.caption("🔗 Stage 6: Testing Combined Filters...")
+        
+        # Use best individual filter settings found in stages 4 & 5
+        best_adx_threshold = 25  # Default if not found above
+        best_ema_period = 21     # Default if not found above
+        
+        # Find actual best values from previous results
+        for result in results:
+            if result.get('use_adx') and not result.get('use_ema'):
+                best_adx_threshold = result.get('adx_threshold', 25)
+            elif result.get('use_ema') and not result.get('use_adx'):
+                best_ema_period = result.get('ema_period', 21)
+        
+        combined_result = test_parameters(data, best_pp, best_af, best_ap, best_htf, 
+                                        True, best_adx_threshold, True, best_ema_period)
+        if combined_result and combined_result['total_trades'] >= 3:
+            results.append(combined_result)
+            st.success(f"✅ Stage 6: Combined filters (Score: {combined_result['score']:.0f})")
+    
+    st.success(f"🎉 Sequential optimization complete! Found {len(results)} valid configurations")
+    return results
+
+def run_matrix_optimization(data, asset, pivot_periods, atr_factors, atr_periods, htf_multipliers, filter_combinations):
+    """Run traditional matrix optimization for Balanced/Comprehensive modes"""
+    results = []
+    total_combos = (len(pivot_periods) * len(atr_factors) * 
+                   len(atr_periods) * len(htf_multipliers) * 
+                   len(filter_combinations))
+    current_combo = 0
+    
+    st.info(f"🔄 Matrix optimization: {total_combos} combinations")
+    
+    for pp in pivot_periods:
+        for af in atr_factors:
+            for ap in atr_periods:
+                for htf in htf_multipliers:
+                    for filters in filter_combinations:
+                        current_combo += 1
+                        
+                        if current_combo % 20 == 0:
+                            progress_text = f"    {asset}: {current_combo}/{total_combos} ({current_combo/total_combos*100:.1f}%)"
+                            st.caption(progress_text)
+                        
+                        result = test_parameters(
+                            data, pp, af, ap, htf,
+                            use_adx=filters.get('use_adx', False),
+                            adx_threshold=filters.get('adx_threshold', 25),
+                            use_ema=filters.get('use_ema', False),
+                            ema_period=filters.get('ema_period', 21)
+                        )
+                        if result and result['total_trades'] >= 3:
+                            results.append(result)
+    
+    return results
+
 def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier, 
                    use_adx=False, adx_threshold=25, use_ema=False, ema_period=21):
     """Test parameter combination with comprehensive error handling"""
@@ -615,12 +773,17 @@ def main():
     )
     
     if optimization_mode == "Fast":
-        st.sidebar.info("⚡ **Fast Mode**: Tests core parameters only (~50-100 combinations)\n\n"
+        st.sidebar.info("⚡ **Fast Mode**: Sequential optimization (~20-30 combinations)\n\n"
+                       "**Smart Process:**\n"
+                       "• Stage 1: Find optimal Pivot + ATR Factor\n"
+                       "• Stage 2: Optimize ATR Period\n"
+                       "• Stage 3: Optimize HTF Multiplier\n"
+                       "• Stage 4-6: Layer on optimal filters\n\n"
                        "**Recommended for:**\n"
                        "• Daily optimization and quick testing\n"
                        "• Rapid strategy validation\n"
-                       "• Testing new assets/timeframes\n"
-                       "• When you need results quickly")
+                       "• High-quality results in minimal time\n"
+                       "• Smart sequential parameter discovery")
     elif optimization_mode == "Balanced":
         st.sidebar.info("⚖️ **Balanced Mode**: Tests key combinations (~500-800 combinations)\n\n"
                        "**Recommended for:**\n" 
@@ -722,29 +885,14 @@ def main():
             
             with st.spinner(f"Optimizing {asset}... ({asset_idx + 1}/{total_assets})"):
                 try:
-                    # Parameter ranges based on optimization mode
+                    # Sequential optimization based on mode
                     if optimization_mode == "Fast":
-                        pivot_periods = [5]
-                        atr_factors = [1.25]
-                        atr_periods = [15]
-                        htf_limit = 2
+                        st.info("🔄 **Sequential Fast Optimization**: Core Parameters → Filters")
+                        results = run_sequential_optimization(data, asset, active_htf_multipliers, 
+                                                            use_adx, adx_thresholds, use_ema, ema_periods)
                         
-                        filter_combinations = [{'use_adx': False, 'use_ema': False}]
-                        if use_adx:
-                            filter_combinations.append({
-                                'use_adx': True, 'adx_threshold': 25, 'use_ema': False
-                            })
-                        if use_ema:
-                            filter_combinations.append({
-                                'use_adx': False, 'use_ema': True, 'ema_period': 21
-                            })
-                        if use_adx and use_ema:
-                            filter_combinations.append({
-                                'use_adx': True, 'adx_threshold': 25,
-                                'use_ema': True, 'ema_period': 21
-                            })
-                            
                     elif optimization_mode == "Balanced":
+                        # Balanced Mode: Reduced but comprehensive
                         pivot_periods = [3, 5, 7]
                         atr_factors = [1.0, 1.25, 1.5]
                         atr_periods = [10, 15, 20]
@@ -763,6 +911,9 @@ def main():
                                     'use_adx': False, 
                                     'use_ema': True, 'ema_period': period
                                 })
+                        
+                        results = run_matrix_optimization(data, asset, pivot_periods, atr_factors, 
+                                                        atr_periods, active_htf_multipliers, filter_combinations)
                                 
                     else:  # Comprehensive Mode
                         pivot_periods = [3, 5, 7]
@@ -790,45 +941,9 @@ def main():
                                         'use_adx': True, 'adx_threshold': threshold,
                                         'use_ema': True, 'ema_period': period
                                     })
-                    
-                    active_htf_multipliers = htf_multipliers[:htf_limit]
-                    
-                    results = []
-                    total_combos = (len(pivot_periods) * len(atr_factors) * 
-                                  len(atr_periods) * len(active_htf_multipliers) * 
-                                  len(filter_combinations))
-                    current_combo = 0
-                    
-                    if optimization_mode == "Fast":
-                        time_estimate = "~2-5 minutes"
-                    elif optimization_mode == "Balanced":
-                        time_estimate = "~15-30 minutes"
-                    else:
-                        time_estimate = "~45-90 minutes"
-                    
-                    st.info(f"🕐 Estimated time: {time_estimate} | Testing {total_combos} combinations")
-                    
-                    for pp in pivot_periods:
-                        for af in atr_factors:
-                            for ap in atr_periods:
-                                for htf in active_htf_multipliers:
-                                    for filters in filter_combinations:
-                                        current_combo += 1
-                                        
-                                        progress_interval = 5 if optimization_mode == "Fast" else 20
-                                        if current_combo % progress_interval == 0:
-                                            progress_text = f"    {asset}: {current_combo}/{total_combos} ({current_combo/total_combos*100:.1f}%)"
-                                            st.caption(progress_text)
-                                        
-                                        result = test_parameters(
-                                            data, pp, af, ap, htf,
-                                            use_adx=filters.get('use_adx', False),
-                                            adx_threshold=filters.get('adx_threshold', 25),
-                                            use_ema=filters.get('use_ema', False),
-                                            ema_period=filters.get('ema_period', 21)
-                                        )
-                                        if result and result['total_trades'] >= 3:
-                                            results.append(result)
+                        
+                        results = run_matrix_optimization(data, asset, pivot_periods, atr_factors, 
+                                                        atr_periods, active_htf_multipliers, filter_combinations)
                     
                     if results:
                         results.sort(key=lambda x: x['score'], reverse=True)
