@@ -203,7 +203,92 @@ def calculate_x_trend(data):
         st.error(f"Error in X Trend calculation: {str(e)}")
         return None
 
-def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier):
+def calculate_adx(data, period=14):
+    """Calculate ADX (Average Directional Index) safely"""
+    try:
+        if len(data) < period + 1:
+            return [0] * len(data)
+        
+        # Calculate True Range
+        tr_list = []
+        for i in range(1, len(data)):
+            tr = max(
+                data.iloc[i]['high'] - data.iloc[i]['low'],
+                abs(data.iloc[i]['high'] - data.iloc[i-1]['close']),
+                abs(data.iloc[i]['low'] - data.iloc[i-1]['close'])
+            )
+            tr_list.append(tr)
+        
+        # Calculate Directional Movement
+        dm_plus = []
+        dm_minus = []
+        for i in range(1, len(data)):
+            high_diff = data.iloc[i]['high'] - data.iloc[i-1]['high']
+            low_diff = data.iloc[i-1]['low'] - data.iloc[i]['low']
+            
+            dm_plus.append(high_diff if (high_diff > low_diff and high_diff > 0) else 0)
+            dm_minus.append(low_diff if (low_diff > high_diff and low_diff > 0) else 0)
+        
+        # Smooth TR, DM+ and DM-
+        def smooth_series(series, period):
+            smoothed = []
+            for i in range(len(series)):
+                if i < period - 1:
+                    smoothed.append(np.mean(series[:i+1]))
+                else:
+                    smoothed.append(np.mean(series[i-period+1:i+1]))
+            return smoothed
+        
+        tr_smooth = smooth_series(tr_list, period)
+        dm_plus_smooth = smooth_series(dm_plus, period)
+        dm_minus_smooth = smooth_series(dm_minus, period)
+        
+        # Calculate DI+ and DI-
+        di_plus = [(dm_plus_smooth[i] / tr_smooth[i]) * 100 if tr_smooth[i] != 0 else 0 
+                   for i in range(len(tr_smooth))]
+        di_minus = [(dm_minus_smooth[i] / tr_smooth[i]) * 100 if tr_smooth[i] != 0 else 0 
+                    for i in range(len(tr_smooth))]
+        
+        # Calculate DX and ADX
+        dx = []
+        for i in range(len(di_plus)):
+            di_sum = di_plus[i] + di_minus[i]
+            if di_sum != 0:
+                dx.append(abs(di_plus[i] - di_minus[i]) / di_sum * 100)
+            else:
+                dx.append(0)
+        
+        adx = smooth_series(dx, period)
+        
+        # Pad with zeros for first bar
+        return [0] + adx
+    except:
+        return [25] * len(data)  # Default to moderate ADX value
+
+def calculate_ema(data, period=21):
+    """Calculate EMA (Exponential Moving Average) safely"""
+    try:
+        if len(data) < period:
+            return data['close'].tolist()
+        
+        ema_values = []
+        multiplier = 2 / (period + 1)
+        
+        # First EMA value is SMA
+        sma = data['close'].iloc[:period].mean()
+        ema_values.extend([sma] * period)
+        
+        # Calculate EMA for remaining values
+        for i in range(period, len(data)):
+            ema = (data['close'].iloc[i] * multiplier) + (ema_values[-1] * (1 - multiplier))
+            ema_values.append(ema)
+        
+        return ema_values
+    except:
+        return data['close'].tolist()
+
+def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier, 
+                   use_adx=False, adx_threshold=25, use_ema=False, ema_period=21):
     """Test parameter combination with comprehensive error handling"""
     try:
         # Limit data size for performance
@@ -250,6 +335,10 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier):
             else:
                 htf_mapped.append(0)
         
+        # Calculate ADX and EMA if needed
+        adx_values = calculate_adx(data) if use_adx else None
+        ema_values = calculate_ema(data, ema_period) if use_ema else None
+        
         # Generate signals
         trades = []
         in_trade = False
@@ -270,8 +359,24 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier):
             x_trend_bullish = htf_mapped[i] == 0
             x_trend_bearish = htf_mapped[i] == 1
             
-            buy_signal = pvt_buy and x_trend_bullish
-            sell_signal = pvt_sell and x_trend_bearish
+            # Apply ADX filter
+            adx_filter_passed = True
+            if use_adx and adx_values and i < len(adx_values):
+                adx_filter_passed = adx_values[i] >= adx_threshold
+            
+            # Apply EMA filter
+            ema_filter_bullish = True
+            ema_filter_bearish = True
+            if use_ema and ema_values and i < len(ema_values):
+                current_close = data.iloc[i]['close']
+                ema_filter_bullish = current_close > ema_values[i]
+                ema_filter_bearish = current_close < ema_values[i]
+            
+            # Combine all filters
+            buy_signal = (pvt_buy and x_trend_bullish and 
+                         adx_filter_passed and ema_filter_bullish)
+            sell_signal = (pvt_sell and x_trend_bearish and 
+                          adx_filter_passed and ema_filter_bearish)
             
             if buy_signal or sell_signal:
                 if in_trade and current_trade:
@@ -306,6 +411,10 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier):
             'atr_factor': atr_factor,
             'atr_period': atr_period,
             'htf_multiplier': htf_multiplier,
+            'use_adx': use_adx,
+            'adx_threshold': adx_threshold if use_adx else None,
+            'use_ema': use_ema,
+            'ema_period': ema_period if use_ema else None,
             'total_trades': len(trades),
             'win_rate': win_rate,
             'total_pips': total_pips,
@@ -382,6 +491,18 @@ def main():
     # Advanced settings
     st.sidebar.subheader("⚙️ Advanced Settings")
     min_bars = st.sidebar.number_input("Minimum Bars", 500, 2000, 800)
+    
+    # ADX Filter Settings
+    use_adx = st.sidebar.checkbox("Use ADX Filter", value=False)
+    adx_thresholds = [20, 25, 30, 35] if use_adx else []
+    if use_adx:
+        st.sidebar.caption("ADX thresholds to test: 20, 25, 30, 35")
+    
+    # EMA Filter Settings
+    use_ema = st.sidebar.checkbox("Use EMA Filter", value=False)
+    ema_periods = [13, 21, 50, 100, 200] if use_ema else []
+    if use_ema:
+        st.sidebar.caption("EMA periods to test: 13, 21, 50, 100, 200")
     
     htf_multipliers = st.sidebar.multiselect(
         "HTF Multipliers",
@@ -461,19 +582,64 @@ def main():
                     atr_factors = [1.0, 1.25, 1.5]
                     atr_periods = [10, 15, 20]
                     
+                    # Filter combinations
+                    filter_combinations = []
+                    
+                    # Base combination (no filters)
+                    filter_combinations.append({'use_adx': False, 'use_ema': False})
+                    
+                    # ADX only combinations
+                    if use_adx:
+                        for threshold in adx_thresholds:
+                            filter_combinations.append({
+                                'use_adx': True, 'adx_threshold': threshold, 
+                                'use_ema': False
+                            })
+                    
+                    # EMA only combinations  
+                    if use_ema:
+                        for period in ema_periods:
+                            filter_combinations.append({
+                                'use_adx': False, 
+                                'use_ema': True, 'ema_period': period
+                            })
+                    
+                    # Combined ADX + EMA combinations
+                    if use_adx and use_ema:
+                        for threshold in adx_thresholds:
+                            for period in ema_periods:
+                                filter_combinations.append({
+                                    'use_adx': True, 'adx_threshold': threshold,
+                                    'use_ema': True, 'ema_period': period
+                                })
+                    
                     results = []
-                    total_combos = len(pivot_periods) * len(atr_factors) * len(atr_periods) * len(htf_multipliers)
+                    total_combos = (len(pivot_periods) * len(atr_factors) * 
+                                  len(atr_periods) * len(htf_multipliers) * 
+                                  len(filter_combinations))
                     current_combo = 0
                     
                     for pp in pivot_periods:
                         for af in atr_factors:
                             for ap in atr_periods:
                                 for htf in htf_multipliers:
-                                    current_combo += 1
-                                    
-                                    result = test_parameters(data, pp, af, ap, htf)
-                                    if result and result['total_trades'] >= 3:
-                                        results.append(result)
+                                    for filters in filter_combinations:
+                                        current_combo += 1
+                                        
+                                        # Update progress every 20 combinations
+                                        if current_combo % 20 == 0:
+                                            progress_text = f"    {asset}: {current_combo}/{total_combos} ({current_combo/total_combos*100:.1f}%)"
+                                            st.caption(progress_text)
+                                        
+                                        result = test_parameters(
+                                            data, pp, af, ap, htf,
+                                            use_adx=filters.get('use_adx', False),
+                                            adx_threshold=filters.get('adx_threshold', 25),
+                                            use_ema=filters.get('use_ema', False),
+                                            ema_period=filters.get('ema_period', 21)
+                                        )
+                                        if result and result['total_trades'] >= 3:
+                                            results.append(result)
                     
                     if results:
                         results.sort(key=lambda x: x['score'], reverse=True)
@@ -518,6 +684,17 @@ def main():
                     st.write(f"**ATR Factor**: {best['atr_factor']}")
                     st.write(f"**ATR Period**: {best['atr_period']}")
                     st.write(f"**HTF Multiplier**: {best['htf_multiplier']}x")
+                    
+                    # Show filter settings
+                    if best.get('use_adx'):
+                        st.write(f"**ADX Filter**: Enabled (≥{best.get('adx_threshold', 25)})")
+                    else:
+                        st.write(f"**ADX Filter**: Disabled")
+                        
+                    if best.get('use_ema'):
+                        st.write(f"**EMA Filter**: Enabled ({best.get('ema_period', 21)} period)")
+                    else:
+                        st.write(f"**EMA Filter**: Disabled")
                 
                 with col2:
                     st.markdown("#### 📈 Performance")
@@ -528,15 +705,24 @@ def main():
                 
                 # PineScript settings
                 st.markdown("#### ⚙️ PineScript Settings")
-                st.code(f"""
-// XPST Settings for {asset}
+                pinescript_settings = f"""// XPST Settings for {asset}
 prd = {best['pivot_period']}
 Factor = {best['atr_factor']}
 Pd = {best['atr_period']}
 use_xtrend = true
 use_xtrend_htf_color = true
 xtrend_htf_tf = "{timeframe}"
-""", language="pinescript")
+use_adx = {str(best.get('use_adx', False)).lower()}"""
+
+                if best.get('use_adx'):
+                    pinescript_settings += f"\nadx_threshold = {best.get('adx_threshold', 25)}"
+                
+                pinescript_settings += f"\nuse_ema = {str(best.get('use_ema', False)).lower()}"
+                
+                if best.get('use_ema'):
+                    pinescript_settings += f"\nema_period = {best.get('ema_period', 21)}"
+                
+                st.code(pinescript_settings, language="pinescript")
     
     # Footer
     st.markdown("---")
