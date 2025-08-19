@@ -659,7 +659,7 @@ def main():
             
             try:
                 with st.spinner(f"Downloading {asset}..."):
-                    yf_symbol = assets[asset]['yf']
+                    yf_symbol = all_assets[asset]['yf']
                     ticker = yf.Ticker(yf_symbol)
                     data = ticker.history(period=period, interval=timeframe)
                     
@@ -675,15 +675,15 @@ def main():
                         downloaded_data[asset] = data
                         
                         # Show asset name for display
-                        display_name = assets[asset]['name']
+                        display_name = all_assets[asset]['name']
                         st.success(f"✅ {display_name}: {len(data)} bars")
                     else:
-                        display_name = assets[asset]['name']
+                        display_name = all_assets[asset]['name']
                         st.error(f"❌ {display_name}: Only {len(data)} bars (need {min_bars})")
                 
                 time.sleep(0.1)  # Rate limiting
             except Exception as e:
-                display_name = assets.get(asset, {}).get('name', asset)
+                display_name = all_assets.get(asset, {}).get('name', asset)
                 st.error(f"❌ {display_name}: {str(e)}")
         
         progress_bar.progress(1.0)
