@@ -490,6 +490,23 @@ def main():
     
     # Advanced settings
     st.sidebar.subheader("⚙️ Advanced Settings")
+    
+    # Optimization Mode
+    optimization_mode = st.sidebar.selectbox(
+        "🚀 Optimization Mode",
+        options=["Fast", "Balanced", "Comprehensive"],
+        index=0,  # Default to Fast
+        help="Fast: ~2-5 min, Balanced: ~15-30 min, Comprehensive: ~45-90 min"
+    )
+    
+    # Show mode details
+    if optimization_mode == "Fast":
+        st.sidebar.info("⚡ Fast Mode: Tests core parameters only (~50-100 combinations)")
+    elif optimization_mode == "Balanced":
+        st.sidebar.info("⚖️ Balanced Mode: Tests key combinations (~500-800 combinations)")
+    else:
+        st.sidebar.info("🔬 Comprehensive Mode: Tests all combinations (~2000+ combinations)")
+    
     min_bars = st.sidebar.number_input("Minimum Bars", 500, 2000, 800)
     
     # ADX Filter Settings
@@ -577,57 +594,110 @@ def main():
             
             with st.spinner(f"Optimizing {asset}... ({asset_idx + 1}/{total_assets})"):
                 try:
-                    # Reduced parameter ranges for faster processing
-                    pivot_periods = [3, 5, 7]
-                    atr_factors = [1.0, 1.25, 1.5]
-                    atr_periods = [10, 15, 20]
-                    
-                    # Filter combinations
-                    filter_combinations = []
-                    
-                    # Base combination (no filters)
-                    filter_combinations.append({'use_adx': False, 'use_ema': False})
-                    
-                    # ADX only combinations
-                    if use_adx:
-                        for threshold in adx_thresholds:
+                    # Parameter ranges based on optimization mode
+                    if optimization_mode == "Fast":
+                        # Fast Mode: Test only optimal/common values
+                        pivot_periods = [5]           # Best general value
+                        atr_factors = [1.25]          # Most common optimal
+                        atr_periods = [15]            # Standard period
+                        htf_limit = 2                 # Only first 2 HTF multipliers
+                        
+                        # Simplified filter testing
+                        filter_combinations = [{'use_adx': False, 'use_ema': False}]
+                        if use_adx:
                             filter_combinations.append({
-                                'use_adx': True, 'adx_threshold': threshold, 
-                                'use_ema': False
+                                'use_adx': True, 'adx_threshold': 25, 'use_ema': False
                             })
-                    
-                    # EMA only combinations  
-                    if use_ema:
-                        for period in ema_periods:
+                        if use_ema:
                             filter_combinations.append({
-                                'use_adx': False, 
-                                'use_ema': True, 'ema_period': period
+                                'use_adx': False, 'use_ema': True, 'ema_period': 21
                             })
-                    
-                    # Combined ADX + EMA combinations
-                    if use_adx and use_ema:
-                        for threshold in adx_thresholds:
-                            for period in ema_periods:
+                        if use_adx and use_ema:
+                            filter_combinations.append({
+                                'use_adx': True, 'adx_threshold': 25,
+                                'use_ema': True, 'ema_period': 21
+                            })
+                            
+                    elif optimization_mode == "Balanced":
+                        # Balanced Mode: Reduced but comprehensive
+                        pivot_periods = [3, 5, 7]
+                        atr_factors = [1.0, 1.25, 1.5]
+                        atr_periods = [10, 15, 20]
+                        htf_limit = 3                 # First 3 HTF multipliers
+                        
+                        # Balanced filter testing (no combined ADX+EMA)
+                        filter_combinations = [{'use_adx': False, 'use_ema': False}]
+                        if use_adx:
+                            for threshold in [25, 30]:  # Only 2 best thresholds
                                 filter_combinations.append({
-                                    'use_adx': True, 'adx_threshold': threshold,
+                                    'use_adx': True, 'adx_threshold': threshold, 
+                                    'use_ema': False
+                                })
+                        if use_ema:
+                            for period in [21, 50]:     # Only 2 best periods
+                                filter_combinations.append({
+                                    'use_adx': False, 
                                     'use_ema': True, 'ema_period': period
                                 })
+                                
+                    else:  # Comprehensive Mode
+                        # Full testing as before
+                        pivot_periods = [3, 5, 7]
+                        atr_factors = [1.0, 1.25, 1.5]
+                        atr_periods = [10, 15, 20]
+                        htf_limit = len(htf_multipliers)  # All HTF multipliers
+                        
+                        # Full filter combinations as before
+                        filter_combinations = [{'use_adx': False, 'use_ema': False}]
+                        if use_adx:
+                            for threshold in adx_thresholds:
+                                filter_combinations.append({
+                                    'use_adx': True, 'adx_threshold': threshold, 
+                                    'use_ema': False
+                                })
+                        if use_ema:
+                            for period in ema_periods:
+                                filter_combinations.append({
+                                    'use_adx': False, 
+                                    'use_ema': True, 'ema_period': period
+                                })
+                        if use_adx and use_ema:
+                            for threshold in adx_thresholds:
+                                for period in ema_periods:
+                                    filter_combinations.append({
+                                        'use_adx': True, 'adx_threshold': threshold,
+                                        'use_ema': True, 'ema_period': period
+                                    })
+                    
+                    # Use limited HTF multipliers for Fast/Balanced modes
+                    active_htf_multipliers = htf_multipliers[:htf_limit]
                     
                     results = []
                     total_combos = (len(pivot_periods) * len(atr_factors) * 
-                                  len(atr_periods) * len(htf_multipliers) * 
+                                  len(atr_periods) * len(active_htf_multipliers) * 
                                   len(filter_combinations))
                     current_combo = 0
+                    
+                    # Show estimated time
+                    if optimization_mode == "Fast":
+                        time_estimate = "~2-5 minutes"
+                    elif optimization_mode == "Balanced":
+                        time_estimate = "~15-30 minutes"
+                    else:
+                        time_estimate = "~45-90 minutes"
+                    
+                    st.info(f"🕐 Estimated time: {time_estimate} | Testing {total_combos} combinations")
                     
                     for pp in pivot_periods:
                         for af in atr_factors:
                             for ap in atr_periods:
-                                for htf in htf_multipliers:
+                                for htf in active_htf_multipliers:
                                     for filters in filter_combinations:
                                         current_combo += 1
                                         
-                                        # Update progress every 20 combinations
-                                        if current_combo % 20 == 0:
+                                        # Update progress more frequently in Fast mode
+                                        progress_interval = 5 if optimization_mode == "Fast" else 20
+                                        if current_combo % progress_interval == 0:
                                             progress_text = f"    {asset}: {current_combo}/{total_combos} ({current_combo/total_combos*100:.1f}%)"
                                             st.caption(progress_text)
                                         
