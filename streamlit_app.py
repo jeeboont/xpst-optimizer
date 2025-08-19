@@ -43,6 +43,99 @@ def check_password():
     else:
         return True
 
+def validate_custom_ticker(symbol):
+    """Validate custom ticker symbol and suggest alternatives"""
+    try:
+        # Test the symbol directly
+        ticker = yf.Ticker(symbol)
+        
+        # Try to get some recent data to validate
+        test_data = ticker.history(period="5d", interval="1d")
+        
+        if len(test_data) > 0:
+            # Get company info if available
+            try:
+                info = ticker.info
+                name = info.get('longName', info.get('shortName', symbol))
+                # Clean up name if too long
+                if len(name) > 50:
+                    name = name[:47] + "..."
+            except:
+                name = symbol
+            
+            return {
+                'valid': True,
+                'symbol': symbol,
+                'name': name,
+                'suggestions': []
+            }
+        else:
+            # No data found, generate suggestions
+            suggestions = generate_ticker_suggestions(symbol)
+            return {
+                'valid': False,
+                'symbol': symbol,
+                'name': None,
+                'suggestions': suggestions
+            }
+    
+    except Exception as e:
+        # Error occurred, generate suggestions
+        suggestions = generate_ticker_suggestions(symbol)
+        return {
+            'valid': False,
+            'symbol': symbol,
+            'name': None,
+            'suggestions': suggestions
+        }
+
+def generate_ticker_suggestions(symbol):
+    """Generate ticker symbol suggestions based on common patterns"""
+    suggestions = []
+    
+    # Common ticker variations
+    variations = [
+        symbol,
+        f"{symbol}.L",     # London Stock Exchange
+        f"{symbol}.TO",    # Toronto Stock Exchange  
+        f"{symbol}.AX",    # Australian Securities Exchange
+        f"{symbol}.DE",    # German exchanges
+        f"{symbol}.PA",    # Paris Stock Exchange
+        f"{symbol}=X",     # Forex pairs
+        f"{symbol}-USD",   # Crypto pairs
+        f"{symbol}USD",    # Alternative crypto format
+        f"^{symbol}",      # Indices
+    ]
+    
+    # Test each variation
+    for variant in variations:
+        if variant != symbol:  # Don't test the original again
+            try:
+                test_ticker = yf.Ticker(variant)
+                test_data = test_ticker.history(period="2d", interval="1d")
+                if len(test_data) > 0:
+                    suggestions.append(variant)
+                    if len(suggestions) >= 3:  # Limit to 3 suggestions
+                        break
+            except:
+                continue
+    
+    # If no variations work, suggest common similar symbols
+    if not suggestions:
+        # For forex pairs
+        if len(symbol) == 6 and symbol.isalpha():
+            suggestions.append(f"{symbol}=X")
+        
+        # For crypto
+        if len(symbol) <= 5:
+            suggestions.extend([f"{symbol}-USD", f"{symbol}USD"])
+        
+        # For stocks
+        if len(symbol) <= 4:
+            suggestions.extend([f"{symbol}.L", f"^{symbol}"])
+    
+    return suggestions[:3]  # Return max 3 suggestions
+
 # XPST Calculation Functions
 def calculate_atr(data, period=15):
     """Calculate Average True Range safely"""
@@ -501,11 +594,26 @@ def main():
     
     # Show mode details
     if optimization_mode == "Fast":
-        st.sidebar.info("⚡ Fast Mode: Tests core parameters only (~50-100 combinations)")
+        st.sidebar.info("⚡ **Fast Mode**: Tests core parameters only (~50-100 combinations)\n\n"
+                       "**Recommended for:**\n"
+                       "• Daily optimization and quick testing\n"
+                       "• Rapid strategy validation\n"
+                       "• Testing new assets/timeframes\n"
+                       "• When you need results quickly")
     elif optimization_mode == "Balanced":
-        st.sidebar.info("⚖️ Balanced Mode: Tests key combinations (~500-800 combinations)")
+        st.sidebar.info("⚖️ **Balanced Mode**: Tests key combinations (~500-800 combinations)\n\n"
+                       "**Recommended for:**\n" 
+                       "• Weekly optimization for good quality\n"
+                       "• Regular strategy refinement\n"
+                       "• Production trading setups\n"
+                       "• Balance between speed and thoroughness")
     else:
-        st.sidebar.info("🔬 Comprehensive Mode: Tests all combinations (~2000+ combinations)")
+        st.sidebar.info("🔬 **Comprehensive Mode**: Tests all combinations (~2000+ combinations)\n\n"
+                       "**Recommended for:**\n"
+                       "• Monthly optimization for maximum quality\n"
+                       "• Final strategy validation\n"
+                       "• Research and backtesting\n"
+                       "• When you need the absolute best parameters")
     
     min_bars = st.sidebar.number_input("Minimum Bars", 500, 2000, 800)
     
@@ -529,11 +637,11 @@ def main():
     )
     
     # Main content
-    if not selected_assets:
+    if not all_selected_assets:
         st.info("👆 Please select at least one asset from the sidebar")
         st.stop()
     
-    st.subheader(f"📥 Selected: {len(selected_assets)} assets, {timeframe} timeframe")
+    st.subheader(f"📥 Selected: {len(all_selected_assets)} assets, {timeframe} timeframe")
     
     # Download and optimize
     if st.button("🚀 Download Data & Run Optimization", type="primary"):
@@ -546,8 +654,8 @@ def main():
         downloaded_data = {}
         
         progress_bar = st.progress(0)
-        for i, asset in enumerate(selected_assets):
-            progress_bar.progress(i / len(selected_assets))
+        for i, asset in enumerate(all_selected_assets):
+            progress_bar.progress(i / len(all_selected_assets))
             
             try:
                 with st.spinner(f"Downloading {asset}..."):
@@ -565,13 +673,18 @@ def main():
                         
                         data.columns = data.columns.str.lower()
                         downloaded_data[asset] = data
-                        st.success(f"✅ {asset}: {len(data)} bars")
+                        
+                        # Show asset name for display
+                        display_name = assets[asset]['name']
+                        st.success(f"✅ {display_name}: {len(data)} bars")
                     else:
-                        st.error(f"❌ {asset}: Only {len(data)} bars (need {min_bars})")
+                        display_name = assets[asset]['name']
+                        st.error(f"❌ {display_name}: Only {len(data)} bars (need {min_bars})")
                 
                 time.sleep(0.1)  # Rate limiting
             except Exception as e:
-                st.error(f"❌ {asset}: {str(e)}")
+                display_name = assets.get(asset, {}).get('name', asset)
+                st.error(f"❌ {display_name}: {str(e)}")
         
         progress_bar.progress(1.0)
         
