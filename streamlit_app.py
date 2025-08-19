@@ -358,11 +358,12 @@ def main():
     # Timeframe selection
     timeframe = st.sidebar.selectbox(
         "Timeframe",
-        options=['5m', '15m', '30m', '1h'],
-        index=1  # Default to 15m
+        options=['1m', '5m', '15m', '30m', '1h'],
+        index=2  # Default to 15m
     )
     
     timeframe_periods = {
+        '1m': ['1d', '5d', '7d'],
         '5m': ['1d', '5d', '1mo'],
         '15m': ['1d', '5d', '1mo', '3mo'],
         '30m': ['5d', '1mo', '3mo', '6mo'],
