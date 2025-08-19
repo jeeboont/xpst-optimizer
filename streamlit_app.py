@@ -369,10 +369,11 @@ def main():
         '1h': ['1mo', '3mo', '6mo', '1y']
     }
     
+    available_periods = timeframe_periods[timeframe]
     period = st.sidebar.selectbox(
         "Period",
-        options=timeframe_periods[timeframe],
-        index=-1  # Last option
+        options=available_periods,
+        index=len(available_periods)-1  # Last option
     )
     
     # Advanced settings
