@@ -25,7 +25,7 @@ st.set_page_config(
 def check_password():
     """Password protection for the app"""
     def password_entered():
-        if st.session_state["password"] == "XPST2024!":  # Change this password!
+        if st.session_state["password"] == "XPST.2025":  # Change this password!
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
