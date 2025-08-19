@@ -1,5 +1,5 @@
-# Stable Full XPST Optimizer - Built on working foundation
-# Enhanced with full optimization features and robust error handling
+# Final Fixed XPST Optimizer - Resolves all variable scope issues
+# Complete working version with custom ticker support
 
 import streamlit as st
 import pandas as pd
@@ -22,6 +22,8 @@ if 'optimization_results' not in st.session_state:
     st.session_state.optimization_results = {}
 if 'downloaded_data' not in st.session_state:
     st.session_state.downloaded_data = {}
+if 'custom_assets' not in st.session_state:
+    st.session_state.custom_assets = {}
 
 # Password protection
 def check_password():
@@ -46,18 +48,13 @@ def check_password():
 def validate_custom_ticker(symbol):
     """Validate custom ticker symbol and suggest alternatives"""
     try:
-        # Test the symbol directly
         ticker = yf.Ticker(symbol)
-        
-        # Try to get some recent data to validate
         test_data = ticker.history(period="5d", interval="1d")
         
         if len(test_data) > 0:
-            # Get company info if available
             try:
                 info = ticker.info
                 name = info.get('longName', info.get('shortName', symbol))
-                # Clean up name if too long
                 if len(name) > 50:
                     name = name[:47] + "..."
             except:
@@ -70,7 +67,6 @@ def validate_custom_ticker(symbol):
                 'suggestions': []
             }
         else:
-            # No data found, generate suggestions
             suggestions = generate_ticker_suggestions(symbol)
             return {
                 'valid': False,
@@ -80,7 +76,6 @@ def validate_custom_ticker(symbol):
             }
     
     except Exception as e:
-        # Error occurred, generate suggestions
         suggestions = generate_ticker_suggestions(symbol)
         return {
             'valid': False,
@@ -93,9 +88,7 @@ def generate_ticker_suggestions(symbol):
     """Generate ticker symbol suggestions based on common patterns"""
     suggestions = []
     
-    # Common ticker variations
     variations = [
-        symbol,
         f"{symbol}.L",     # London Stock Exchange
         f"{symbol}.TO",    # Toronto Stock Exchange  
         f"{symbol}.AX",    # Australian Securities Exchange
@@ -107,41 +100,33 @@ def generate_ticker_suggestions(symbol):
         f"^{symbol}",      # Indices
     ]
     
-    # Test each variation
     for variant in variations:
-        if variant != symbol:  # Don't test the original again
-            try:
-                test_ticker = yf.Ticker(variant)
-                test_data = test_ticker.history(period="2d", interval="1d")
-                if len(test_data) > 0:
-                    suggestions.append(variant)
-                    if len(suggestions) >= 3:  # Limit to 3 suggestions
-                        break
-            except:
-                continue
+        try:
+            test_ticker = yf.Ticker(variant)
+            test_data = test_ticker.history(period="2d", interval="1d")
+            if len(test_data) > 0:
+                suggestions.append(variant)
+                if len(suggestions) >= 3:
+                    break
+        except:
+            continue
     
-    # If no variations work, suggest common similar symbols
     if not suggestions:
-        # For forex pairs
         if len(symbol) == 6 and symbol.isalpha():
             suggestions.append(f"{symbol}=X")
-        
-        # For crypto
         if len(symbol) <= 5:
             suggestions.extend([f"{symbol}-USD", f"{symbol}USD"])
-        
-        # For stocks
         if len(symbol) <= 4:
             suggestions.extend([f"{symbol}.L", f"^{symbol}"])
     
-    return suggestions[:3]  # Return max 3 suggestions
+    return suggestions[:3]
 
 # XPST Calculation Functions
 def calculate_atr(data, period=15):
     """Calculate Average True Range safely"""
     try:
         tr_list = []
-        for i in range(1, min(len(data), 1000)):  # Limit for performance
+        for i in range(1, min(len(data), 1000)):
             tr = max(
                 data.iloc[i]['high'] - data.iloc[i]['low'],
                 abs(data.iloc[i]['high'] - data.iloc[i-1]['close']),
@@ -166,7 +151,7 @@ def find_pivots(data, period=5, pivot_type='high'):
         pivots = [None] * len(data)
         price_col = 'high' if pivot_type == 'high' else 'low'
         
-        for i in range(period, min(len(data) - period, 500)):  # Limit for performance
+        for i in range(period, min(len(data) - period, 500)):
             current_price = data.iloc[i][price_col]
             is_pivot = True
             
@@ -202,8 +187,7 @@ def calculate_pivot_supertrend(data, pivot_period=5, atr_factor=1.25, atr_period
         results = []
         center = None
         
-        for i in range(min(len(data), 500)):  # Limit for performance
-            # Update center
+        for i in range(min(len(data), 500)):
             if (i < len(pivot_highs) and pivot_highs[i] is not None) or \
                (i < len(pivot_lows) and pivot_lows[i] is not None):
                 lastpp = pivot_highs[i] if (i < len(pivot_highs) and pivot_highs[i]) else pivot_lows[i]
@@ -213,7 +197,6 @@ def calculate_pivot_supertrend(data, pivot_period=5, atr_factor=1.25, atr_period
                 results.append({'trend': 1})
                 continue
             
-            # Calculate supertrend
             atr_val = atr_values[i] if i < len(atr_values) else atr_values[-1]
             up = center - (atr_factor * atr_val)
             down = center + (atr_factor * atr_val)
@@ -236,7 +219,6 @@ def calculate_pivot_supertrend(data, pivot_period=5, atr_factor=1.25, atr_period
         
         return results
     except Exception as e:
-        st.error(f"Error in Pivot Supertrend calculation: {str(e)}")
         return None
 
 def calculate_x_trend(data):
@@ -251,12 +233,11 @@ def calculate_x_trend(data):
         low_max = 0
         high_min = 0
         
-        for i in range(min(len(data), 500)):  # Limit for performance
+        for i in range(min(len(data), 500)):
             if i < 3:
                 results.append({'x_trend': 0})
                 continue
             
-            # Simple calculations
             start_idx = max(0, i-2)
             lowest_low = data.iloc[start_idx:i+1]['low'].min()
             
@@ -274,7 +255,6 @@ def calculate_x_trend(data):
             prev_low = data.iloc[i-1]['low'] if i > 0 else current_close
             prev_high = data.iloc[i-1]['high'] if i > 0 else current_close
             
-            # X Trend logic
             if next_trend == 1:
                 low_max = max(low_max, lowest_low)
                 if ma_high < low_max and current_close < prev_low:
@@ -293,7 +273,6 @@ def calculate_x_trend(data):
         
         return results
     except Exception as e:
-        st.error(f"Error in X Trend calculation: {str(e)}")
         return None
 
 def calculate_adx(data, period=14):
@@ -302,7 +281,6 @@ def calculate_adx(data, period=14):
         if len(data) < period + 1:
             return [0] * len(data)
         
-        # Calculate True Range
         tr_list = []
         for i in range(1, len(data)):
             tr = max(
@@ -312,7 +290,6 @@ def calculate_adx(data, period=14):
             )
             tr_list.append(tr)
         
-        # Calculate Directional Movement
         dm_plus = []
         dm_minus = []
         for i in range(1, len(data)):
@@ -322,7 +299,6 @@ def calculate_adx(data, period=14):
             dm_plus.append(high_diff if (high_diff > low_diff and high_diff > 0) else 0)
             dm_minus.append(low_diff if (low_diff > high_diff and low_diff > 0) else 0)
         
-        # Smooth TR, DM+ and DM-
         def smooth_series(series, period):
             smoothed = []
             for i in range(len(series)):
@@ -336,13 +312,11 @@ def calculate_adx(data, period=14):
         dm_plus_smooth = smooth_series(dm_plus, period)
         dm_minus_smooth = smooth_series(dm_minus, period)
         
-        # Calculate DI+ and DI-
         di_plus = [(dm_plus_smooth[i] / tr_smooth[i]) * 100 if tr_smooth[i] != 0 else 0 
                    for i in range(len(tr_smooth))]
         di_minus = [(dm_minus_smooth[i] / tr_smooth[i]) * 100 if tr_smooth[i] != 0 else 0 
                     for i in range(len(tr_smooth))]
         
-        # Calculate DX and ADX
         dx = []
         for i in range(len(di_plus)):
             di_sum = di_plus[i] + di_minus[i]
@@ -352,11 +326,9 @@ def calculate_adx(data, period=14):
                 dx.append(0)
         
         adx = smooth_series(dx, period)
-        
-        # Pad with zeros for first bar
         return [0] + adx
     except:
-        return [25] * len(data)  # Default to moderate ADX value
+        return [25] * len(data)
 
 def calculate_ema(data, period=21):
     """Calculate EMA (Exponential Moving Average) safely"""
@@ -367,11 +339,9 @@ def calculate_ema(data, period=21):
         ema_values = []
         multiplier = 2 / (period + 1)
         
-        # First EMA value is SMA
         sma = data['close'].iloc[:period].mean()
         ema_values.extend([sma] * period)
         
-        # Calculate EMA for remaining values
         for i in range(period, len(data)):
             ema = (data['close'].iloc[i] * multiplier) + (ema_values[-1] * (1 - multiplier))
             ema_values.append(ema)
@@ -384,18 +354,15 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
                    use_adx=False, adx_threshold=25, use_ema=False, ema_period=21):
     """Test parameter combination with comprehensive error handling"""
     try:
-        # Limit data size for performance
         if len(data) > 1000:
             data = data.tail(1000).copy()
         
-        # Calculate indicators
         pivot_st = calculate_pivot_supertrend(data, pivot_period, atr_factor, atr_period)
         x_trend_local = calculate_x_trend(data)
         
         if not pivot_st or not x_trend_local:
             return None
         
-        # Create HTF data
         htf_data = []
         for i in range(0, len(data), htf_multiplier):
             slice_data = data.iloc[i:min(i + htf_multiplier, len(data))]
@@ -419,7 +386,6 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
         if not x_trend_htf:
             return None
         
-        # Map HTF to local timeframe
         htf_mapped = []
         for i in range(len(data)):
             htf_index = i // htf_multiplier
@@ -428,16 +394,13 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
             else:
                 htf_mapped.append(0)
         
-        # Calculate ADX and EMA if needed
         adx_values = calculate_adx(data) if use_adx else None
         ema_values = calculate_ema(data, ema_period) if use_ema else None
         
-        # Generate signals
         trades = []
         in_trade = False
         current_trade = None
-        
-        max_trades = 50  # Limit trades for performance
+        max_trades = 50
         
         for i in range(1, min(len(data), len(pivot_st), len(htf_mapped))):
             if len(trades) >= max_trades:
@@ -452,12 +415,10 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
             x_trend_bullish = htf_mapped[i] == 0
             x_trend_bearish = htf_mapped[i] == 1
             
-            # Apply ADX filter
             adx_filter_passed = True
             if use_adx and adx_values and i < len(adx_values):
                 adx_filter_passed = adx_values[i] >= adx_threshold
             
-            # Apply EMA filter
             ema_filter_bullish = True
             ema_filter_bearish = True
             if use_ema and ema_values and i < len(ema_values):
@@ -465,7 +426,6 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
                 ema_filter_bullish = current_close > ema_values[i]
                 ema_filter_bearish = current_close < ema_values[i]
             
-            # Combine all filters
             buy_signal = (pvt_buy and x_trend_bullish and 
                          adx_filter_passed and ema_filter_bullish)
             sell_signal = (pvt_sell and x_trend_bearish and 
@@ -490,7 +450,6 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
         if len(trades) < 3:
             return None
         
-        # Calculate metrics
         winning_trades = [t for t in trades if t['profit']]
         total_pips = sum(t['pips'] for t in trades)
         win_rate = len(winning_trades) / len(trades) * 100
@@ -536,28 +495,96 @@ def main():
     
     # Asset configuration
     assets = {
-        'BTCUSD': {'yf': 'BTC-USD', 'name': 'Bitcoin/USD'},
-        'ETHUSD': {'yf': 'ETH-USD', 'name': 'Ethereum/USD'},
-        'XAUUSD': {'yf': 'GC=F', 'name': 'Gold/USD'},
-        'EURUSD': {'yf': 'EURUSD=X', 'name': 'Euro/USD'},
-        'GBPUSD': {'yf': 'GBPUSD=X', 'name': 'GBP/USD'},
-        'USDJPY': {'yf': 'USDJPY=X', 'name': 'USD/JPY'},
-        'AUDUSD': {'yf': 'AUDUSD=X', 'name': 'AUD/USD'},
-        'USDCAD': {'yf': 'USDCAD=X', 'name': 'USD/CAD'}
+        'BTCUSD': {'yf': 'BTC-USD', 'name': 'Bitcoin/USD', 'type': 'Crypto'},
+        'ETHUSD': {'yf': 'ETH-USD', 'name': 'Ethereum/USD', 'type': 'Crypto'},
+        'XAUUSD': {'yf': 'GC=F', 'name': 'Gold/USD', 'type': 'Commodity'},
+        'EURUSD': {'yf': 'EURUSD=X', 'name': 'Euro/USD', 'type': 'Forex'},
+        'GBPUSD': {'yf': 'GBPUSD=X', 'name': 'GBP/USD', 'type': 'Forex'},
+        'USDJPY': {'yf': 'USDJPY=X', 'name': 'USD/JPY', 'type': 'Forex'},
+        'AUDUSD': {'yf': 'AUDUSD=X', 'name': 'AUD/USD', 'type': 'Forex'},
+        'USDCAD': {'yf': 'USDCAD=X', 'name': 'USD/CAD', 'type': 'Forex'}
     }
     
     # Sidebar configuration
     st.sidebar.header("📊 Configuration")
     
     # Asset selection
+    st.sidebar.subheader("🏦 Select Assets")
+    
     selected_assets = st.sidebar.multiselect(
-        "Select Assets",
+        "Predefined Assets",
         options=list(assets.keys()),
         default=['EURUSD'],
         format_func=lambda x: f"{x} ({assets[x]['name']})"
     )
     
+    # Custom ticker input
+    st.sidebar.markdown("**Add Custom Ticker:**")
+    custom_ticker = st.sidebar.text_input(
+        "Enter Symbol (e.g., AAPL, TSLA, SPY)",
+        placeholder="Type ticker symbol...",
+        help="Enter any Yahoo Finance symbol. We'll validate and suggest alternatives if needed."
+    )
+    
+    # Custom ticker validation and addition
+    if custom_ticker:
+        custom_ticker = custom_ticker.upper().strip()
+        
+        if st.sidebar.button(f"➕ Add {custom_ticker}"):
+            test_result = validate_custom_ticker(custom_ticker)
+            
+            if test_result['valid']:
+                custom_key = f"CUSTOM_{custom_ticker}"
+                st.session_state.custom_assets[custom_key] = {
+                    'yf': test_result['symbol'], 
+                    'name': test_result['name'],
+                    'type': 'Custom'
+                }
+                st.sidebar.success(f"✅ Added: {test_result['name']}")
+                st.rerun()
+                
+            else:
+                st.sidebar.error(f"❌ Symbol '{custom_ticker}' not found")
+                if test_result['suggestions']:
+                    st.sidebar.warning("💡 Did you mean one of these?")
+                    for suggestion in test_result['suggestions']:
+                        if st.sidebar.button(f"Use {suggestion}", key=f"suggest_{suggestion}"):
+                            custom_key = f"CUSTOM_{suggestion}"
+                            test_suggestion = validate_custom_ticker(suggestion)
+                            if test_suggestion['valid']:
+                                st.session_state.custom_assets[custom_key] = {
+                                    'yf': test_suggestion['symbol'],
+                                    'name': test_suggestion['name'],
+                                    'type': 'Custom'
+                                }
+                                st.sidebar.success(f"✅ Added: {test_suggestion['name']}")
+                                st.rerun()
+    
+    # Show selected custom assets
+    if st.session_state.custom_assets:
+        st.sidebar.markdown("**Custom Assets Added:**")
+        assets_to_remove = []
+        for asset_key, asset_info in st.session_state.custom_assets.items():
+            col1, col2 = st.sidebar.columns([3, 1])
+            with col1:
+                st.caption(f"• {asset_info['name']}")
+            with col2:
+                if st.button("❌", key=f"remove_{asset_key}", help="Remove"):
+                    assets_to_remove.append(asset_key)
+        
+        for asset_key in assets_to_remove:
+            del st.session_state.custom_assets[asset_key]
+            st.rerun()
+    
+    # Combine all assets and create final selection list
+    all_assets = assets.copy()
+    all_assets.update(st.session_state.custom_assets)
+    custom_asset_keys = list(st.session_state.custom_assets.keys())
+    all_selected_assets = selected_assets + custom_asset_keys
+    
     # Timeframe selection
+    st.sidebar.subheader("⏰ Timeframe Settings")
+    
     timeframe = st.sidebar.selectbox(
         "Timeframe",
         options=['1m', '5m', '15m', '30m', '1h', '4h', '1d'],
@@ -575,24 +602,18 @@ def main():
     }
     
     available_periods = timeframe_periods[timeframe]
-    period = st.sidebar.selectbox(
-        "Period",
-        options=available_periods,
-        index=len(available_periods)-1  # Last option
-    )
+    period = st.sidebar.selectbox("Period", available_periods, index=len(available_periods)-1)
     
     # Advanced settings
     st.sidebar.subheader("⚙️ Advanced Settings")
     
-    # Optimization Mode
     optimization_mode = st.sidebar.selectbox(
         "🚀 Optimization Mode",
         options=["Fast", "Balanced", "Comprehensive"],
-        index=0,  # Default to Fast
+        index=0,
         help="Fast: ~2-5 min, Balanced: ~15-30 min, Comprehensive: ~45-90 min"
     )
     
-    # Show mode details
     if optimization_mode == "Fast":
         st.sidebar.info("⚡ **Fast Mode**: Tests core parameters only (~50-100 combinations)\n\n"
                        "**Recommended for:**\n"
@@ -617,13 +638,11 @@ def main():
     
     min_bars = st.sidebar.number_input("Minimum Bars", 500, 2000, 800)
     
-    # ADX Filter Settings
     use_adx = st.sidebar.checkbox("Use ADX Filter", value=False)
     adx_thresholds = [20, 25, 30, 35] if use_adx else []
     if use_adx:
         st.sidebar.caption("ADX thresholds to test: 20, 25, 30, 35")
     
-    # EMA Filter Settings
     use_ema = st.sidebar.checkbox("Use EMA Filter", value=False)
     ema_periods = [13, 21, 50, 100, 200] if use_ema else []
     if use_ema:
@@ -645,7 +664,6 @@ def main():
     
     # Download and optimize
     if st.button("🚀 Download Data & Run Optimization", type="primary"):
-        # Clear previous results
         st.session_state.optimization_results = {}
         st.session_state.downloaded_data = {}
         
@@ -664,7 +682,6 @@ def main():
                     data = ticker.history(period=period, interval=timeframe)
                     
                     if len(data) >= min_bars:
-                        # Format data
                         data.reset_index(inplace=True)
                         if 'Datetime' in data.columns:
                             data['time'] = data['Datetime']
@@ -674,14 +691,13 @@ def main():
                         data.columns = data.columns.str.lower()
                         downloaded_data[asset] = data
                         
-                        # Show asset name for display
                         display_name = all_assets[asset]['name']
                         st.success(f"✅ {display_name}: {len(data)} bars")
                     else:
                         display_name = all_assets[asset]['name']
                         st.error(f"❌ {display_name}: Only {len(data)} bars (need {min_bars})")
                 
-                time.sleep(0.1)  # Rate limiting
+                time.sleep(0.1)
             except Exception as e:
                 display_name = all_assets.get(asset, {}).get('name', asset)
                 st.error(f"❌ {display_name}: {str(e)}")
@@ -692,7 +708,6 @@ def main():
             st.error("No data downloaded successfully")
             st.stop()
         
-        # Store downloaded data
         st.session_state.downloaded_data = downloaded_data
         
         # Run optimization
@@ -709,13 +724,11 @@ def main():
                 try:
                     # Parameter ranges based on optimization mode
                     if optimization_mode == "Fast":
-                        # Fast Mode: Test only optimal/common values
-                        pivot_periods = [5]           # Best general value
-                        atr_factors = [1.25]          # Most common optimal
-                        atr_periods = [15]            # Standard period
-                        htf_limit = 2                 # Only first 2 HTF multipliers
+                        pivot_periods = [5]
+                        atr_factors = [1.25]
+                        atr_periods = [15]
+                        htf_limit = 2
                         
-                        # Simplified filter testing
                         filter_combinations = [{'use_adx': False, 'use_ema': False}]
                         if use_adx:
                             filter_combinations.append({
@@ -732,35 +745,31 @@ def main():
                             })
                             
                     elif optimization_mode == "Balanced":
-                        # Balanced Mode: Reduced but comprehensive
                         pivot_periods = [3, 5, 7]
                         atr_factors = [1.0, 1.25, 1.5]
                         atr_periods = [10, 15, 20]
-                        htf_limit = 3                 # First 3 HTF multipliers
+                        htf_limit = 3
                         
-                        # Balanced filter testing (no combined ADX+EMA)
                         filter_combinations = [{'use_adx': False, 'use_ema': False}]
                         if use_adx:
-                            for threshold in [25, 30]:  # Only 2 best thresholds
+                            for threshold in [25, 30]:
                                 filter_combinations.append({
                                     'use_adx': True, 'adx_threshold': threshold, 
                                     'use_ema': False
                                 })
                         if use_ema:
-                            for period in [21, 50]:     # Only 2 best periods
+                            for period in [21, 50]:
                                 filter_combinations.append({
                                     'use_adx': False, 
                                     'use_ema': True, 'ema_period': period
                                 })
                                 
                     else:  # Comprehensive Mode
-                        # Full testing as before
                         pivot_periods = [3, 5, 7]
                         atr_factors = [1.0, 1.25, 1.5]
                         atr_periods = [10, 15, 20]
-                        htf_limit = len(htf_multipliers)  # All HTF multipliers
+                        htf_limit = len(htf_multipliers)
                         
-                        # Full filter combinations as before
                         filter_combinations = [{'use_adx': False, 'use_ema': False}]
                         if use_adx:
                             for threshold in adx_thresholds:
@@ -782,7 +791,6 @@ def main():
                                         'use_ema': True, 'ema_period': period
                                     })
                     
-                    # Use limited HTF multipliers for Fast/Balanced modes
                     active_htf_multipliers = htf_multipliers[:htf_limit]
                     
                     results = []
@@ -791,7 +799,6 @@ def main():
                                   len(filter_combinations))
                     current_combo = 0
                     
-                    # Show estimated time
                     if optimization_mode == "Fast":
                         time_estimate = "~2-5 minutes"
                     elif optimization_mode == "Balanced":
@@ -808,7 +815,6 @@ def main():
                                     for filters in filter_combinations:
                                         current_combo += 1
                                         
-                                        # Update progress more frequently in Fast mode
                                         progress_interval = 5 if optimization_mode == "Fast" else 20
                                         if current_combo % progress_interval == 0:
                                             progress_text = f"    {asset}: {current_combo}/{total_combos} ({current_combo/total_combos*100:.1f}%)"
@@ -827,7 +833,7 @@ def main():
                     if results:
                         results.sort(key=lambda x: x['score'], reverse=True)
                         optimization_results[asset] = {
-                            'results': results[:5],  # Top 5
+                            'results': results[:5],
                             'best': results[0],
                             'data_info': {
                                 'rows': len(data),
@@ -840,14 +846,10 @@ def main():
                         st.warning(f"⚠️ {asset}: No profitable configurations found")
                 
                 except Exception as e:
-                    st.error(f"❌ {asset}: Optimization error - {str(e)}")
+                    st.error(f"❌ Error optimizing {asset}: {str(e)}")
         
         main_progress.progress(1.0)
-        
-        # Store results
         st.session_state.optimization_results = optimization_results
-        
-        # Force refresh to show results
         st.rerun()
     
     # Display results
@@ -855,40 +857,78 @@ def main():
         st.markdown("---")
         st.subheader("🏆 Optimization Results")
         
+        results_summary = []
         for asset, results in st.session_state.optimization_results.items():
-            with st.expander(f"📊 {asset} - Score: {results['best']['score']:.0f}", expanded=True):
-                best = results['best']
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("#### 🎯 Optimal Parameters")
-                    st.write(f"**Pivot Period**: {best['pivot_period']}")
-                    st.write(f"**ATR Factor**: {best['atr_factor']}")
-                    st.write(f"**ATR Period**: {best['atr_period']}")
-                    st.write(f"**HTF Multiplier**: {best['htf_multiplier']}x")
+            best = results['best']
+            
+            if asset.startswith('CUSTOM_'):
+                asset_name = st.session_state.custom_assets[asset]['name']
+                asset_type = 'Custom'
+            else:
+                asset_name = assets[asset]['name']  
+                asset_type = assets[asset].get('type', 'Unknown')
+            
+            results_summary.append({
+                'Asset': asset.replace('CUSTOM_', '') if asset.startswith('CUSTOM_') else asset,
+                'Asset Name': asset_name,
+                'Type': asset_type,
+                'Score': best['score'],
+                'Win Rate (%)': best['win_rate'],
+                'Total Pips': best['total_pips'],
+                'Total Trades': best['total_trades'],
+                'Risk:Reward': best['risk_reward']
+            })
+        
+        if results_summary:
+            summary_df = pd.DataFrame(results_summary)
+            summary_df = summary_df.sort_values('Score', ascending=False)
+            
+            st.markdown("### 📊 Performance Summary")
+            st.dataframe(summary_df, use_container_width=True)
+            
+            st.markdown("### 📋 Detailed Results")
+            for asset, results in st.session_state.optimization_results.items():
+                if asset.startswith('CUSTOM_'):
+                    display_name = st.session_state.custom_assets[asset]['name']
+                    asset_display = f"{display_name}"
+                else:
+                    display_name = assets[asset]['name']
+                    asset_display = f"{asset} ({display_name})"
                     
-                    # Show filter settings
-                    if best.get('use_adx'):
-                        st.write(f"**ADX Filter**: Enabled (≥{best.get('adx_threshold', 25)})")
-                    else:
-                        st.write(f"**ADX Filter**: Disabled")
+                with st.expander(f"📊 {asset_display} - Score: {results['best']['score']:.0f}", expanded=True):
+                    best = results['best']
+                    data_info = results['data_info']
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### 🎯 Optimal Parameters")
+                        st.write(f"**Pivot Period**: {best['pivot_period']}")
+                        st.write(f"**ATR Factor**: {best['atr_factor']}")
+                        st.write(f"**ATR Period**: {best['atr_period']}")
+                        st.write(f"**HTF Multiplier**: {best['htf_multiplier']}x")
                         
-                    if best.get('use_ema'):
-                        st.write(f"**EMA Filter**: Enabled ({best.get('ema_period', 21)} period)")
-                    else:
-                        st.write(f"**EMA Filter**: Disabled")
-                
-                with col2:
-                    st.markdown("#### 📈 Performance")
-                    st.write(f"**Total Trades**: {best['total_trades']}")
-                    st.write(f"**Win Rate**: {best['win_rate']:.1f}%")
-                    st.write(f"**Total Pips**: {best['total_pips']:.2f}")
-                    st.write(f"**Risk:Reward**: {best['risk_reward']:.2f}:1")
-                
-                # PineScript settings
-                st.markdown("#### ⚙️ PineScript Settings")
-                pinescript_settings = f"""// XPST Settings for {asset}
+                        if best.get('use_adx'):
+                            st.write(f"**ADX Filter**: Enabled (≥{best.get('adx_threshold', 25)})")
+                        else:
+                            st.write(f"**ADX Filter**: Disabled")
+                            
+                        if best.get('use_ema'):
+                            st.write(f"**EMA Filter**: Enabled ({best.get('ema_period', 21)} period)")
+                        else:
+                            st.write(f"**EMA Filter**: Disabled")
+                    
+                    with col2:
+                        st.markdown("#### 📈 Performance Metrics")
+                        st.write(f"**Total Trades**: {best['total_trades']}")
+                        st.write(f"**Win Rate**: {best['win_rate']:.1f}%")
+                        st.write(f"**Total Pips**: {best['total_pips']:.2f}")
+                        st.write(f"**Risk:Reward**: {best['risk_reward']:.2f}:1")
+                        st.write(f"**Score**: {best['score']:.0f}")
+                    
+                    # PineScript settings
+                    st.markdown("#### ⚙️ PineScript Settings")
+                    pinescript_settings = f"""// XPST Settings for {asset}
 prd = {best['pivot_period']}
 Factor = {best['atr_factor']}
 Pd = {best['atr_period']}
@@ -897,15 +937,87 @@ use_xtrend_htf_color = true
 xtrend_htf_tf = "{timeframe}"
 use_adx = {str(best.get('use_adx', False)).lower()}"""
 
-                if best.get('use_adx'):
-                    pinescript_settings += f"\nadx_threshold = {best.get('adx_threshold', 25)}"
+                    if best.get('use_adx'):
+                        pinescript_settings += f"\nadx_threshold = {best.get('adx_threshold', 25)}"
+                    
+                    pinescript_settings += f"\nuse_ema = {str(best.get('use_ema', False)).lower()}"
+                    
+                    if best.get('use_ema'):
+                        pinescript_settings += f"\nema_period = {best.get('ema_period', 21)}"
+                    
+                    st.code(pinescript_settings, language="pinescript")
+                    
+                    # Top configurations table
+                    st.markdown("#### 📋 Top 5 Configurations")
+                    top_configs = []
+                    for i, result in enumerate(results['results'][:5]):
+                        top_configs.append({
+                            'Rank': i + 1,
+                            'PP': result['pivot_period'],
+                            'ATR Factor': result['atr_factor'],
+                            'ATR Period': result['atr_period'],
+                            'HTF': f"{result['htf_multiplier']}x",
+                            'Trades': result['total_trades'],
+                            'Win%': f"{result['win_rate']:.1f}%",
+                            'Pips': f"{result['total_pips']:.0f}",
+                            'Score': f"{result['score']:.0f}"
+                        })
+                    
+                    config_df = pd.DataFrame(top_configs)
+                    st.dataframe(config_df, use_container_width=True)
+            
+            # Export functionality
+            st.markdown("### 💾 Export Results")
+            
+            export_data = []
+            for asset, results in st.session_state.optimization_results.items():
+                best = results['best']
+                data_info = results['data_info']
                 
-                pinescript_settings += f"\nuse_ema = {str(best.get('use_ema', False)).lower()}"
+                if asset.startswith('CUSTOM_'):
+                    asset_name = st.session_state.custom_assets[asset]['name']
+                    asset_type = 'Custom'
+                else:
+                    asset_name = assets[asset]['name']
+                    asset_type = assets[asset].get('type', 'Unknown')
                 
-                if best.get('use_ema'):
-                    pinescript_settings += f"\nema_period = {best.get('ema_period', 21)}"
-                
-                st.code(pinescript_settings, language="pinescript")
+                export_data.append({
+                    'Asset': asset.replace('CUSTOM_', '') if asset.startswith('CUSTOM_') else asset,
+                    'Asset_Name': asset_name,
+                    'Asset_Type': asset_type,
+                    'Data_Bars': data_info['rows'],
+                    'Timeframe': data_info['timeframe'],
+                    'Period': data_info['period'],
+                    'Optimal_Pivot_Period': best['pivot_period'],
+                    'Optimal_ATR_Factor': best['atr_factor'],
+                    'Optimal_ATR_Period': best['atr_period'],
+                    'Optimal_HTF_Multiplier': best['htf_multiplier'],
+                    'Use_ADX': best.get('use_adx', False),
+                    'ADX_Threshold': best.get('adx_threshold', ''),
+                    'Use_EMA': best.get('use_ema', False),
+                    'EMA_Period': best.get('ema_period', ''),
+                    'Total_Trades': best['total_trades'],
+                    'Win_Rate': best['win_rate'],
+                    'Total_Pips': best['total_pips'],
+                    'Risk_Reward': best['risk_reward'],
+                    'Score': best['score']
+                })
+            
+            export_df = pd.DataFrame(export_data)
+            csv = export_df.to_csv(index=False)
+            
+            st.download_button(
+                label="📁 Download Results as CSV",
+                data=csv,
+                file_name=f"XPST_Optimization_Results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.warning("No optimization results found. Please try different settings or assets.")
+    
+    elif st.session_state.downloaded_data and not st.session_state.optimization_results:
+        st.info("📊 Data downloaded. Click the optimization button to start the analysis.")
     
     # Footer
     st.markdown("---")
