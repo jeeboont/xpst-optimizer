@@ -1,18 +1,16 @@
 """
-XPST Optimizer - Enhanced cBot Parity Edition
-Version: 3.2.2
+XPST Optimizer - Unified Version
+Version: 3.2.0
 Last Updated: 2025-08-20
 Author: XPST Trading Systems
 
-NEW IN v3.2.2:
-- ENHANCED: Smoothed Pivot Supertrend (no mid-air flips)
-- ENHANCED: Correct exit precedence (XTrend > Opposite > Trend > ADX)
-- ENHANCED: ADX exit logic implementation
-- ENHANCED: EMA filter sequencing (applied after signal generation)
-- ENHANCED: Complete TradingView v3.1 logic parity
-- ENHANCED: Jump protection system (2×ATR limits)
-- ENHANCED: Enhanced pending state management
-- NOW MATCHES: cBot v3.1.2-2.2 Enhanced behavior exactly
+UNIFIED v3.2.0:
+- EXACT TradingView v3.1 Supertrend calculation (corrected)
+- Correct exit precedence (XTrend > Opposite > Trend > ADX)
+- Enhanced pending state management
+- Complete logic parity with Indicator v3.2.0 and cBot v3.2.0
+- Staged optimization: Core params first, then filters
+- All components now use identical calculation logic
 """
 
 import streamlit as st
@@ -26,7 +24,7 @@ import zipfile
 warnings.filterwarnings('ignore')
 
 # Version display in UI
-__version__ = "3.2.2"
+__version__ = "3.2.0"
 __last_updated__ = "2025-08-20"
 
 # Initialize session state
@@ -98,7 +96,7 @@ def calculate_pivot_points(df, period=5):
         return pd.Series(index=df.index, dtype=float), pd.Series(index=df.index, dtype=float)
 
 def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=15):
-    """ENHANCED: Calculate Pivot Supertrend with v3.1.2 improvements (no mid-air flips)"""
+    """CORRECTED: Calculate Pivot Supertrend with EXACT TradingView v3.1 logic"""
     try:
         df = df.copy()
         
@@ -116,7 +114,7 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
         # Calculate pivot points
         pivot_highs, pivot_lows = calculate_pivot_points(df, pivot_period)
         
-        # ENHANCED: Calculate center line with smoothed updates (prevents sudden jumps)
+        # CORRECTED: Calculate center line with EXACT TradingView logic
         center = pd.Series(index=df.index, dtype=float)
         last_pivot = pd.Series(index=df.index, dtype=float)
         
@@ -132,15 +130,14 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
                 if i == 0 or pd.isna(center.iloc[i-1]):
                     center.iloc[i] = last_pivot.iloc[i]
                 else:
-                    # ENHANCED: Smoothed center calculation to prevent sudden jumps
-                    smoothing_factor = 0.1  # Much gentler than the original (2+1)/3 = 0.33
-                    center.iloc[i] = (center.iloc[i-1] * (1 - smoothing_factor)) + (last_pivot.iloc[i] * smoothing_factor)
+                    # EXACT TradingView v3.1 center calculation
+                    center.iloc[i] = (center.iloc[i-1] * 2 + last_pivot.iloc[i]) / 3
             elif i > 0:
                 center.iloc[i] = center.iloc[i-1]
             else:
                 center.iloc[i] = df['close'].iloc[0]  # Fallback to close price
         
-        # Calculate ATR
+        # Calculate ATR exactly like TradingView
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift())
         low_close = np.abs(df['low'] - df['close'].shift())
@@ -156,7 +153,7 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
         up = center - (atr_factor * atr)
         down = center + (atr_factor * atr)
         
-        # ENHANCED: Initialize trailing stop and trend with jump protection
+        # CORRECTED: Initialize trailing stop and trend with EXACT TradingView logic
         tup = pd.Series(index=df.index, dtype=float)
         tdown = pd.Series(index=df.index, dtype=float)
         trend = pd.Series(index=df.index, dtype=int)
@@ -168,61 +165,27 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
             trend.iloc[0] = 1
         
         for i in range(1, len(df)):
-            # Store previous values for jump protection
-            prev_tup = tup.iloc[i-1]
-            prev_tdown = tdown.iloc[i-1]
-            
-            # Calculate new TUp with jump protection
-            if df['close'].iloc[i-1] > prev_tup if not pd.isna(prev_tup) else False:
-                new_tup = max(up.iloc[i], prev_tup) if not pd.isna(prev_tup) and not pd.isna(up.iloc[i]) else up.iloc[i]
+            # EXACT TradingView v3.1 TUp calculation
+            if df['close'].iloc[i-1] > tup.iloc[i-1] if not pd.isna(tup.iloc[i-1]) else False:
+                tup.iloc[i] = max(up.iloc[i], tup.iloc[i-1]) if not pd.isna(tup.iloc[i-1]) and not pd.isna(up.iloc[i]) else up.iloc[i]
             else:
-                new_tup = up.iloc[i] if not pd.isna(up.iloc[i]) else prev_tup
+                tup.iloc[i] = up.iloc[i] if not pd.isna(up.iloc[i]) else tup.iloc[i-1]
             
-            # ENHANCED: Prevent sudden jumps - limit change to 2 * ATR per bar
-            max_change = 2 * atr.iloc[i] if not pd.isna(atr.iloc[i]) else 0
-            if not pd.isna(prev_tup) and not pd.isna(new_tup) and abs(new_tup - prev_tup) > max_change:
-                tup.iloc[i] = prev_tup + (max_change if new_tup > prev_tup else -max_change)
+            # EXACT TradingView v3.1 TDown calculation
+            if df['close'].iloc[i-1] < tdown.iloc[i-1] if not pd.isna(tdown.iloc[i-1]) else False:
+                tdown.iloc[i] = min(down.iloc[i], tdown.iloc[i-1]) if not pd.isna(tdown.iloc[i-1]) and not pd.isna(down.iloc[i]) else down.iloc[i]
             else:
-                tup.iloc[i] = new_tup
+                tdown.iloc[i] = down.iloc[i] if not pd.isna(down.iloc[i]) else tdown.iloc[i-1]
             
-            # Calculate new TDown with jump protection
-            if df['close'].iloc[i-1] < prev_tdown if not pd.isna(prev_tdown) else False:
-                new_tdown = min(down.iloc[i], prev_tdown) if not pd.isna(prev_tdown) and not pd.isna(down.iloc[i]) else down.iloc[i]
-            else:
-                new_tdown = down.iloc[i] if not pd.isna(down.iloc[i]) else prev_tdown
-            
-            # ENHANCED: Prevent sudden jumps - limit change to 2 * ATR per bar
-            if not pd.isna(prev_tdown) and not pd.isna(new_tdown) and abs(new_tdown - prev_tdown) > max_change:
-                tdown.iloc[i] = prev_tdown + (max_change if new_tdown > prev_tdown else -max_change)
-            else:
-                tdown.iloc[i] = new_tdown
-            
-            # ENHANCED: Enhanced trend determination with stability checks
+            # EXACT TradingView v3.1 trend determination
             current_close = df['close'].iloc[i]
-            prev_trend = trend.iloc[i-1] if i > 0 else 1
             
-            # Only allow trend change if price clearly crosses the opposite line
-            # AND the new trend line is stable (not jumping around)
-            if current_close > tdown.iloc[i-1] and prev_trend != 1:
-                # Additional check: ensure we're not in a sudden jump situation
-                stable_transition = abs(tdown.iloc[i] - prev_tdown) <= atr.iloc[i] if not pd.isna(atr.iloc[i]) else True
-                if stable_transition or prev_trend == 0:
-                    trend.iloc[i] = 1  # Bullish trend
-                else:
-                    trend.iloc[i] = prev_trend
-            elif current_close < tup.iloc[i-1] and prev_trend != -1:
-                # Additional check: ensure we're not in a sudden jump situation
-                stable_transition = abs(tup.iloc[i] - prev_tup) <= atr.iloc[i] if not pd.isna(atr.iloc[i]) else True
-                if stable_transition or prev_trend == 0:
-                    trend.iloc[i] = -1  # Bearish trend
-                else:
-                    trend.iloc[i] = prev_trend
+            if current_close > tdown.iloc[i-1] if not pd.isna(tdown.iloc[i-1]) else False:
+                trend.iloc[i] = 1  # Bullish trend
+            elif current_close < tup.iloc[i-1] if not pd.isna(tup.iloc[i-1]) else False:
+                trend.iloc[i] = -1  # Bearish trend
             else:
-                trend.iloc[i] = prev_trend
-            
-            # Initialize trend if not set
-            if trend.iloc[i] == 0:
-                trend.iloc[i] = 1 if current_close > (tup.iloc[i] + tdown.iloc[i]) / 2 else -1
+                trend.iloc[i] = trend.iloc[i-1] if i > 0 else 1
         
         df['pvt_trend'] = trend
         df['pvt_tup'] = tup
@@ -232,7 +195,7 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
         return df
         
     except Exception as e:
-        print(f"Error in Enhanced Pivot Supertrend calculation: {e}")
+        print(f"Error in Corrected Pivot Supertrend calculation: {e}")
         import traceback
         traceback.print_exc()
         
@@ -878,7 +841,7 @@ def run_enhanced_staged_optimization(df, asset_name, use_xtrend, use_adx, use_em
                         combination_count += 1
                         progress = combination_count / stage1_combinations
                         progress_bar.progress(progress)
-                        status_text.text(f"Stage 1: Testing {combination_count}/{stage1_combinations} (Enhanced Logic)")
+                        status_text.text(f"Stage 1: Testing {combination_count}/{stage1_combinations} (EXACT TradingView Logic)")
                         
                         # Use default filter settings for Stage 1
                         params = {
@@ -932,8 +895,8 @@ def run_enhanced_staged_optimization(df, asset_name, use_xtrend, use_adx, use_em
         progress_bar.empty()
         status_text.empty()
         
-        st.success(f"✅ Stage 1 Complete! Found {len(stage1_results)} valid enhanced core configurations")
-        st.info("🔝 **Top 3 Enhanced Core Configurations:**")
+        st.success(f"✅ Stage 1 Complete! Found {len(stage1_results)} valid EXACT TradingView core configurations")
+        st.info("🔝 **Top 3 CORRECTED Core Configurations:**")
         st.dataframe(top_3_core[['pivot_period', 'atr_factor', 'atr_period', 'htf_timeframe', 'win_rate', 'total_pips', 'score']], use_container_width=True)
         
         # === STAGE 2: OPTIMIZE FILTERS ON TOP 3 CORE CONFIGS ===
@@ -1112,10 +1075,10 @@ def main():
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
         <h1 style="color: white; margin: 0;">🎯 XPST Optimizer v{__version__}</h1>
-        <p style="color: #e8f4f8; margin: 5px 0 0 0;">Enhanced cBot Parity Edition</p>
+        <p style="color: #e8f4f8; margin: 5px 0 0 0;">Unified Version</p>
         <p style="color: #d0e8f0; margin: 3px 0 0 0; font-size: 0.9em;">Last Updated: {__last_updated__}</p>
-        <p style="color: #ffd700; margin: 8px 0 0 0; font-size: 0.95em; font-weight: bold;">🆕 NEW: Enhanced Supertrend + Correct Exit Precedence + ADX Exits!</p>
-        <p style="color: #98fb98; margin: 5px 0 0 0; font-size: 0.9em;">✅ Now Matches: cBot v3.1.2-2.2 Enhanced Exactly</p>
+        <p style="color: #ffd700; margin: 8px 0 0 0; font-size: 0.95em; font-weight: bold;">🆕 UNIFIED: EXACT TradingView v3.1 Logic Across All Components!</p>
+        <p style="color: #98fb98; margin: 5px 0 0 0; font-size: 0.9em;">✅ Matches: Indicator v3.2.0 | cBot v3.2.0 | Optimizer v3.2.0</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1835,9 +1798,9 @@ Score: {best['score']:.1f}
         f"""
         <div style="text-align: center; color: #666;">
             <small>
-            XPST Optimizer v{__version__} | Enhanced cBot Parity Edition<br>
-            Enhanced Supertrend + Correct Exit Precedence + ADX Exits + Complete Logic<br>
-            ✅ Now Matches: cBot v3.1.2-2.2 Enhanced Exactly
+            XPST Optimizer v{__version__} | Unified Version<br>
+            EXACT TradingView v3.1 Logic + Correct Exit Precedence + Complete Feature Parity<br>
+            ✅ Unified: Indicator v3.2.0 | cBot v3.2.0 | Optimizer v3.2.0
             </small>
         </div>
         """,
