@@ -4,6 +4,8 @@ import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
 import warnings
+import io
+import zipfile
 warnings.filterwarnings('ignore')
 
 # Initialize session state
@@ -932,6 +934,51 @@ def main():
                     label=asset,
                     value=f"{len(data)} bars",
                     delta=f"{data['time'].iloc[-1] - data['time'].iloc[0]} seconds"
+                )
+        
+        # Add download options for the data
+        st.markdown("### 💾 Export Data")
+        export_cols = st.columns(len(st.session_state.downloaded_data))
+        
+        for idx, (asset, data) in enumerate(st.session_state.downloaded_data.items()):
+            with export_cols[idx]:
+                # Convert data to CSV
+                csv = data.to_csv(index=False)
+                
+                # Create download button for each asset
+                st.download_button(
+                    label=f"📥 Download {asset}",
+                    data=csv,
+                    file_name=f"{asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    help=f"Download {asset} price data as CSV file"
+                )
+        
+        # Option to download all data as a zip file
+        if len(st.session_state.downloaded_data) > 1:
+            st.markdown("---")
+            with st.expander("📦 Download All Data as ZIP"):
+                import io
+                import zipfile
+                
+                # Create a ZIP file in memory
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for asset, data in st.session_state.downloaded_data.items():
+                        csv_data = data.to_csv(index=False)
+                        file_name = f"{asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                        zip_file.writestr(file_name, csv_data)
+                
+                zip_buffer.seek(0)
+                
+                st.download_button(
+                    label="📦 Download All Data (ZIP)",
+                    data=zip_buffer.getvalue(),
+                    file_name=f"XPST_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                    type="primary"
                 )
     
     # Results section
