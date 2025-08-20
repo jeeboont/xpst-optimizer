@@ -597,29 +597,36 @@ def download_data(symbol, period='1mo', interval='5m'):
         st.error(f"Error downloading {symbol}: {e}")
         return None
 
-def process_uploaded_csv(df, filename):
-    """Process uploaded CSV file to match expected format"""
+def download_data_custom_range(symbol, start_date, end_date, interval='5m'):
+    """Download data for custom date range"""
     try:
-        df = df.copy()
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(start=start_date, end=end_date, interval=interval)
         
-        # Ensure column names are lowercase
-        df.columns = [col.lower() for col in df.columns]
-        
-        # Check for required columns
-        required = ['time', 'open', 'high', 'low', 'close', 'volume']
-        if not all(col in df.columns for col in required):
-            st.error(f"CSV must have columns: {required}")
+        if data.empty:
+            st.error(f"No data found for {symbol} in the specified range")
             return None
         
-        # Limit to 1000 rows for performance
-        if len(df) > 1000:
-            df = df.tail(1000)
-            st.info(f"Using last 1000 bars from {filename}")
+        # Format data to match CSV structure
+        data.reset_index(inplace=True)
+        data.columns = [col.lower() for col in data.columns]
         
-        return df
+        # Ensure we have the required columns
+        data = data.rename(columns={'date': 'datetime', 'index': 'datetime'})
+        
+        # Convert datetime to timestamp format
+        if 'datetime' in data.columns:
+            data['time'] = pd.to_datetime(data['datetime']).astype(int) // 10**9
+        
+        # Show actual data range retrieved
+        actual_start = pd.to_datetime(data['datetime'].iloc[0])
+        actual_end = pd.to_datetime(data['datetime'].iloc[-1])
+        st.info(f"Retrieved {len(data)} bars from {actual_start:%Y-%m-%d %H:%M} to {actual_end:%Y-%m-%d %H:%M}")
+        
+        return data[['time', 'open', 'high', 'low', 'close', 'volume']]
         
     except Exception as e:
-        st.error(f"Error processing CSV: {e}")
+        st.error(f"Error downloading {symbol}: {e}")
         return None
 
 def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, xtrend_grey, 
