@@ -549,32 +549,78 @@ def process_uploaded_csv(df, filename):
         st.error(f"Error processing CSV: {e}")
         return None
 
-def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, xtrend_grey):
-    """Run optimization with specified filter settings"""
+def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, xtrend_grey, 
+                                  optimization_mode='Quick', use_htf=True, htf_mode='Essential',
+                                  max_bars=500, skip_low_volume=True):
+    """Run optimization with specified filter settings and optimization mode"""
     try:
         results = []
         
-        # Parameter ranges
-        pivot_periods = [3, 5, 7, 10]
-        atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
-        atr_periods = [10, 14, 15, 20]
-        htf_multipliers = [1, 2, 3, 4, 6, 8, 12, 16]
+        # Limit data for faster processing
+        if len(df) > max_bars:
+            df = df.tail(max_bars)
+            st.info(f"Using last {max_bars} bars for faster processing")
+        
+        # Define parameter ranges based on optimization mode
+        if optimization_mode == 'Quick':
+            # Quick mode: Still test key pivot and ATR values, but fewer combinations
+            pivot_periods = [3, 5, 7, 10]  # All pivot periods for proper optimization
+            atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]  # All ATR factors for proper optimization
+            atr_periods = [10, 14, 15, 20]  # All ATR periods for proper optimization
+            htf_multipliers = [1, 3, 6] if use_htf else [1]  # Reduced HTF only
+        elif optimization_mode == 'Standard':
+            pivot_periods = [3, 5, 7, 10]
+            atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
+            atr_periods = [10, 14, 15, 20]
+            htf_multipliers = [1, 2, 3, 6, 12] if use_htf else [1]
+        else:  # Full
+            pivot_periods = [3, 5, 7, 10]
+            atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
+            atr_periods = [10, 14, 15, 20]
+            htf_multipliers = [1, 2, 3, 4, 6, 8, 12, 16] if use_htf else [1]
+        
+        # Further filter HTF based on htf_mode
+        if use_htf and htf_mode == 'Essential':
+            htf_multipliers = [x for x in htf_multipliers if x in [1, 3, 6, 12]]
+        
+        # Calculate total combinations
+        total_combinations = len(pivot_periods) * len(atr_factors) * len(atr_periods) * len(htf_multipliers)
+        
+        # Show optimization summary
+        mode_desc = {
+            'Quick': 'Testing all Pivot/ATR params with limited HTF',
+            'Standard': 'Testing all params with moderate HTF variations',
+            'Full': 'Testing all params with all HTF variations'
+        }
+        st.info(f"{mode_desc[optimization_mode]}: {total_combinations} combinations")
         
         # Progress tracking
-        total_combinations = len(pivot_periods) * len(atr_factors) * len(atr_periods) * len(htf_multipliers)
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
         combination_count = 0
+        skipped_count = 0
+        
+        # Early exit tracking for poor performers
+        best_score = 0
+        base_scores = {}  # Track scores for base parameters
         
         for pivot_period in pivot_periods:
             for atr_factor in atr_factors:
                 for atr_period in atr_periods:
+                    base_key = f"{pivot_period}_{atr_factor}_{atr_period}"
+                    base_performed_well = True
+                    
                     for htf_mult in htf_multipliers:
                         combination_count += 1
                         progress = combination_count / total_combinations
                         progress_bar.progress(progress)
-                        status_text.text(f"Testing combination {combination_count}/{total_combinations}")
+                        status_text.text(f"Testing {combination_count}/{total_combinations} (Skipped: {skipped_count})")
+                        
+                        # In Quick mode, skip poor HTF variations more aggressively
+                        if optimization_mode == 'Quick' and htf_mult > 1:
+                            if base_key in base_scores and base_scores[base_key] < best_score * 0.5:
+                                skipped_count += 1
+                                continue
                         
                         params = {
                             'pivot_period': pivot_period,
@@ -590,6 +636,13 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
                         
                         metrics = run_backtest(df, params, htf_mult)
                         
+                        # Skip if too few trades
+                        if skip_low_volume and metrics['total_trades'] < 5:
+                            skipped_count += 1
+                            if htf_mult == 1:
+                                base_scores[base_key] = 0
+                            continue
+                        
                         # Calculate composite score
                         if metrics['total_trades'] > 0:
                             score = (
@@ -599,6 +652,13 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
                             )
                         else:
                             score = 0
+                        
+                        # Track scores
+                        if htf_mult == 1:
+                            base_scores[base_key] = score
+                        
+                        if score > best_score:
+                            best_score = score
                         
                         results.append({
                             'pivot_period': pivot_period,
@@ -618,6 +678,9 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
         progress_bar.empty()
         status_text.empty()
         
+        if skipped_count > 0:
+            st.info(f"Optimization complete! Skipped {skipped_count} low-performing combinations")
+        
         # Convert to DataFrame and sort
         results_df = pd.DataFrame(results)
         results_df = results_df.sort_values('score', ascending=False)
@@ -626,6 +689,8 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
         
     except Exception as e:
         st.error(f"Optimization error: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
 
 def run_optimization(df, asset_name):
@@ -736,6 +801,14 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.subheader("⚙️ Optimization Settings")
     
+    # Quick vs Full optimization
+    optimization_mode = st.sidebar.radio(
+        "Optimization Mode",
+        options=["Quick", "Standard", "Full"],
+        index=0,
+        help="Quick: All Pivot/ATR params with limited HTF (240 combos)\nStandard: All params with moderate HTF (400 combos)\nFull: All params with all HTF variations (640 combos)"
+    )
+    
     # Filter settings
     use_filters = st.sidebar.checkbox("Use Filters in Optimization", value=True)
     if use_filters:
@@ -749,6 +822,37 @@ def main():
         use_adx = False
         use_ema = False
         xtrend_grey = False
+    
+    # HTF Settings
+    st.sidebar.markdown("**HTF Settings:**")
+    use_htf = st.sidebar.checkbox("Test HTF Variations", value=True, 
+                                  help="Disable to only test same timeframe (1x)")
+    
+    htf_mode = 'Essential'  # Default value
+    if use_htf:
+        htf_mode = st.sidebar.radio(
+            "HTF Testing",
+            options=["Essential", "All"],
+            index=0,
+            help="Essential: Tests 1x, 3x, 6x, 12x\nAll: Tests all multipliers"
+        )
+    
+    # Advanced settings (collapsible)
+    with st.sidebar.expander("🔧 Advanced Settings"):
+        max_bars = st.sidebar.slider(
+            "Max Bars to Process",
+            min_value=200,
+            max_value=2000,
+            value=500,
+            step=100,
+            help="Fewer bars = faster processing"
+        )
+        
+        skip_low_volume = st.sidebar.checkbox(
+            "Skip Low Volume Periods",
+            value=True,
+            help="Skip combinations that produce < 5 trades"
+        )
     
     # Main content area
     st.markdown("### 📊 Data Management")
@@ -795,9 +899,11 @@ def main():
                     with st.container():
                         st.write(f"**Optimizing {asset}...**")
                         
-                        # Pass filter settings to optimization
+                        # Pass all optimization settings
                         results = run_optimization_with_filters(
-                            data, asset, use_xtrend, use_adx, use_ema, xtrend_grey
+                            data, asset, use_xtrend, use_adx, use_ema, xtrend_grey,
+                            optimization_mode, use_htf, htf_mode if use_htf else 'Essential',
+                            max_bars, skip_low_volume
                         )
                         
                         if not results.empty:
