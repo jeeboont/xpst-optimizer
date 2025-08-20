@@ -1,12 +1,26 @@
 """
 XPST Optimizer - TradingView Consistency Verified Edition
-Version: 3.1.25
+Version: 3.1.31
 Last Updated: 2025-08-20
 Author: XPST Trading Systems
 
 VERSION HISTORY:
 ================
-v3.1.25 (2025-08-20) - Current Version
+v3.1.31 (2025-08-20) - Current Version
+- Fixed CSV upload to handle TradingView exported files
+- Added automatic column name normalization (handles Volume vs volume)
+- Enhanced CSV processing with better error messages
+- Added TradingView CSV format converter function
+- Improved data type validation and conversion
+
+v3.1.30 (2025-08-20)
+- Added Custom Date Range option for exact TradingView period matching
+- Implemented verification guide for comparing with TradingView
+- Added helper functions for data format conversion
+- Enhanced data download with actual date range display
+- Added verification tips in expandable footer section
+
+v3.1.25 (2025-08-20)
 - Fixed Last N Trades heading to show requested number instead of actual
 - Updated filter display to show ADX≥25 and EMA200 format in tables
 - Added complete XPST settings display with all filters and thresholds
@@ -68,7 +82,7 @@ import zipfile
 warnings.filterwarnings('ignore')
 
 # Version display in UI
-__version__ = "3.1.25"
+__version__ = "3.1.31"
 __last_updated__ = "2025-08-20"
 
 # Initialize session state
@@ -973,7 +987,24 @@ def main():
                         if data is not None:
                             st.session_state.downloaded_data[asset] = data
                             st.success(f"✅ {asset}: {len(data)} bars")
-        else:
+        
+        elif data_source == "Custom Date Range":
+            if st.button("📥 Download Custom Range", type="primary", use_container_width=True):
+                st.session_state.downloaded_data.clear()
+                
+                for asset in selected_assets:
+                    with st.spinner(f"Downloading {asset} for custom range..."):
+                        data = download_data_custom_range(
+                            assets[asset]['yf'],
+                            start_date,
+                            end_date,
+                            interval=timeframe
+                        )
+                        if data is not None:
+                            st.session_state.downloaded_data[asset] = data
+                            st.success(f"✅ {asset}: {len(data)} bars")
+        
+        else:  # Upload CSV
             if uploaded_files:
                 if st.button("📤 Process CSV Files", type="primary", use_container_width=True):
                     st.session_state.downloaded_data.clear()
@@ -1261,17 +1292,44 @@ Score: {best['score']:.1f}
         else:
             st.info("✨ Data ready! Click 'Run Optimization' to find the best XPST settings")
     
-    # Footer
+    # Footer with verification tips
     st.markdown("---")
+    with st.expander("🔍 How to Verify Results with TradingView"):
+        st.markdown("""
+        ### Method 1: Use Exact Same Data
+        1. Download data from optimizer using **Custom Date Range**
+        2. Export the CSV using the download button
+        3. Note the exact start/end times shown in optimization
+        4. In TradingView, use Bar Replay to match the same period
+        
+        ### Method 2: Compare Key Metrics
+        Focus on these ratio-based metrics that should be similar:
+        - **Win Rate %** (should match within 2-3%)
+        - **Average Win/Loss Ratio**
+        - **Profit Factor** (if trade count is similar)
+        
+        ### Method 3: Spot Check Specific Trades
+        1. Pick a specific date/time from the optimizer results
+        2. Check if TradingView shows entry/exit at same points
+        3. Verify signal conditions (PVT flip, X Trend state, etc.)
+        
+        ### Tips for Accurate Comparison:
+        - ✅ Ensure same timeframe (1m, 5m, etc.)
+        - ✅ Check timezone settings match
+        - ✅ Verify all filters are set identically
+        - ✅ Use "Require MTF Agreement" if testing HTF
+        - ⚠️ Small differences (1-2 trades) are normal due to data variations
+        """)
+    
     st.markdown(
         """
         <div style="text-align: center; color: #666;">
             <small>
-            XPST Optimizer v3.1 | Matches TradingView Implementation<br>
+            XPST Optimizer v{} | Matches TradingView Implementation<br>
             Data provided by Yahoo Finance | Optimized for XPST v3.1 Pine Script
             </small>
         </div>
-        """,
+        """.format(__version__),
         unsafe_allow_html=True
     )
 
