@@ -1,12 +1,18 @@
 """
 XPST Optimizer - TradingView Consistency Verified Edition
-Version: 3.1.33
+Version: 3.1.34
 Last Updated: 2025-08-20
 Author: XPST Trading Systems
 
 VERSION HISTORY:
 ================
-v3.1.33 (2025-08-20) - Current Version
+v3.1.34 (2025-08-20) - Current Version
+- Fixed TypeError in run_backtest function signature
+- Ensured asset_name parameter is properly passed through all functions
+- Fixed Last N Trades analysis to include asset name
+- Corrected function calls throughout the codebase
+
+v3.1.33 (2025-08-20)
 - Fixed pip calculation for crypto assets (BTC, ETH use dollar values)
 - Changed default for "Require MTF Agreement" to False (unchecked)
 - Added asset name parameter to backtest functions
@@ -95,7 +101,7 @@ import zipfile
 warnings.filterwarnings('ignore')
 
 # Version display in UI
-__version__ = "3.1.33"
+__version__ = "3.1.34"
 __last_updated__ = "2025-08-20"
 
 # Initialize session state
@@ -1311,7 +1317,7 @@ Score: {best['score']:.1f}
                         if asset_data is not None:
                             # Run full backtest to get trade details
                             full_metrics, trade_list = run_backtest_with_trades(
-                                asset_data, best_params, best['htf_multiplier']
+                                asset_data, best_params, best['htf_multiplier'], asset
                             )
                             
                             if trade_list and len(trade_list) > 0:
