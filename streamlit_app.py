@@ -378,11 +378,26 @@ def calculate_ema(data, period=21):
     except:
         return data['close'].tolist()
 
-def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thresholds, use_ema, ema_periods):
+def run_sequential_optimization(data, asset, use_xtrend, htf_multipliers, use_adx, adx_thresholds, use_ema, ema_periods):
     """Run intelligent sequential optimization for Fast Mode"""
     results = []
     
     st.markdown(f"#### 🔄 Sequential Optimization for {asset}")
+    
+    # Determine HTF multipliers to test
+    if use_xtrend:
+        if htf_multipliers:
+            # Test 1x (local) + selected HTF multipliers
+            test_htf_multipliers = [1] + htf_multipliers
+            st.caption(f"🔄 X Trend enabled: Testing 1x + {htf_multipliers}")
+        else:
+            # Only test 1x (local timeframe)
+            test_htf_multipliers = [1]
+            st.caption("🔄 X Trend enabled: Testing 1x (local timeframe only)")
+    else:
+        # No X Trend filter - use dummy HTF (won't be used in signals)
+        test_htf_multipliers = [1]
+        st.caption("⚠️ X Trend disabled: Using Pivot Supertrend only")
     
     # Stage 1: Find optimal Pivot Period + ATR Factor combination
     st.caption("🎯 Stage 1: Optimizing Pivot Period + ATR Factor...")
@@ -393,7 +408,7 @@ def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thres
     
     for pp in pivot_options:
         for af in atr_factor_options:
-            result = test_parameters(data, pp, af, 15, 3, False, 25, False, 21)  # Fixed defaults
+            result = test_parameters(data, pp, af, 15, 1, use_xtrend, False, 25, False, 21)  # Fixed defaults
             if result and result['total_trades'] >= 3:
                 stage1_results.append((result['score'], pp, af))
     
@@ -413,7 +428,7 @@ def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thres
     atr_period_options = [10, 15, 20]
     
     for ap in atr_period_options:
-        result = test_parameters(data, best_pp, best_af, ap, 3, False, 25, False, 21)  # Fixed HTF=3
+        result = test_parameters(data, best_pp, best_af, ap, 1, use_xtrend, False, 25, False, 21)
         if result and result['total_trades'] >= 3:
             stage2_results.append((result['score'], ap))
     
@@ -424,24 +439,34 @@ def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thres
         best_ap = stage2_results[0][1]
         st.success(f"✅ Stage 2: Best ATR Period={best_ap} (Score: {stage2_results[0][0]:.0f})")
     
-    # Stage 3: Optimize HTF with best core parameters
-    st.caption("🔄 Stage 3: Optimizing HTF Multiplier...")
-    stage3_results = []
-    
-    for htf in htf_multipliers[:3]:  # Limit to first 3 for speed
-        result = test_parameters(data, best_pp, best_af, best_ap, htf, False, 25, False, 21)
-        if result and result['total_trades'] >= 3:
-            stage3_results.append((result['score'], htf))
-    
-    if not stage3_results:
-        best_htf = 3  # Default fallback
+    # Stage 3: Optimize HTF with best core parameters (only if X Trend enabled)
+    if use_xtrend and len(test_htf_multipliers) > 1:
+        st.caption("🔄 Stage 3: Optimizing HTF Multiplier...")
+        stage3_results = []
+        
+        for htf in test_htf_multipliers[:4]:  # Limit for speed
+            result = test_parameters(data, best_pp, best_af, best_ap, htf, use_xtrend, False, 25, False, 21)
+            if result and result['total_trades'] >= 3:
+                stage3_results.append((result['score'], htf))
+        
+        if not stage3_results:
+            best_htf = 1  # Default to local timeframe
+        else:
+            stage3_results.sort(reverse=True)
+            best_htf = stage3_results[0][1]
+            if best_htf == 1:
+                st.success(f"✅ Stage 3: Best HTF = 1x (local timeframe) (Score: {stage3_results[0][0]:.0f})")
+            else:
+                st.success(f"✅ Stage 3: Best HTF Multiplier={best_htf}x (Score: {stage3_results[0][0]:.0f})")
     else:
-        stage3_results.sort(reverse=True)
-        best_htf = stage3_results[0][1]
-        st.success(f"✅ Stage 3: Best HTF Multiplier={best_htf}x (Score: {stage3_results[0][0]:.0f})")
+        best_htf = 1  # Use local timeframe
+        if use_xtrend:
+            st.success("✅ Stage 3: Using 1x (local timeframe only)")
+        else:
+            st.success("✅ Stage 3: X Trend disabled - using local timeframe")
     
     # Add best core configuration to results
-    best_core_result = test_parameters(data, best_pp, best_af, best_ap, best_htf, False, 25, False, 21)
+    best_core_result = test_parameters(data, best_pp, best_af, best_ap, best_htf, use_xtrend, False, 25, False, 21)
     if best_core_result:
         results.append(best_core_result)
     
@@ -452,7 +477,7 @@ def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thres
         best_adx_threshold = 25
         
         for threshold in [20, 25, 30]:  # Limited set for speed
-            result = test_parameters(data, best_pp, best_af, best_ap, best_htf, True, threshold, False, 21)
+            result = test_parameters(data, best_pp, best_af, best_ap, best_htf, use_xtrend, True, threshold, False, 21)
             if result and result['total_trades'] >= 3:
                 results.append(result)
                 if result['score'] > best_adx_score:
@@ -469,7 +494,7 @@ def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thres
         best_ema_period = 21
         
         for period in [21, 50, 100]:  # Limited set for speed
-            result = test_parameters(data, best_pp, best_af, best_ap, best_htf, False, 25, True, period)
+            result = test_parameters(data, best_pp, best_af, best_ap, best_htf, use_xtrend, False, 25, True, period)
             if result and result['total_trades'] >= 3:
                 results.append(result)
                 if result['score'] > best_ema_score:
@@ -494,7 +519,7 @@ def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thres
             elif result.get('use_ema') and not result.get('use_adx'):
                 best_ema_period = result.get('ema_period', 21)
         
-        combined_result = test_parameters(data, best_pp, best_af, best_ap, best_htf, 
+        combined_result = test_parameters(data, best_pp, best_af, best_ap, best_htf, use_xtrend,
                                         True, best_adx_threshold, True, best_ema_period)
         if combined_result and combined_result['total_trades'] >= 3:
             results.append(combined_result)
@@ -503,11 +528,21 @@ def run_sequential_optimization(data, asset, htf_multipliers, use_adx, adx_thres
     st.success(f"🎉 Sequential optimization complete! Found {len(results)} valid configurations")
     return results
 
-def run_matrix_optimization(data, asset, pivot_periods, atr_factors, atr_periods, htf_multipliers, filter_combinations):
+def run_matrix_optimization(data, asset, pivot_periods, atr_factors, atr_periods, use_xtrend, htf_multipliers, filter_combinations):
     """Run traditional matrix optimization for Balanced/Comprehensive modes"""
     results = []
+    
+    # Determine HTF multipliers to test
+    if use_xtrend:
+        if htf_multipliers:
+            test_htf_multipliers = [1] + htf_multipliers
+        else:
+            test_htf_multipliers = [1]
+    else:
+        test_htf_multipliers = [1]
+    
     total_combos = (len(pivot_periods) * len(atr_factors) * 
-                   len(atr_periods) * len(htf_multipliers) * 
+                   len(atr_periods) * len(test_htf_multipliers) * 
                    len(filter_combinations))
     current_combo = 0
     
@@ -516,7 +551,7 @@ def run_matrix_optimization(data, asset, pivot_periods, atr_factors, atr_periods
     for pp in pivot_periods:
         for af in atr_factors:
             for ap in atr_periods:
-                for htf in htf_multipliers:
+                for htf in test_htf_multipliers:
                     for filters in filter_combinations:
                         current_combo += 1
                         
@@ -525,7 +560,7 @@ def run_matrix_optimization(data, asset, pivot_periods, atr_factors, atr_periods
                             st.caption(progress_text)
                         
                         result = test_parameters(
-                            data, pp, af, ap, htf,
+                            data, pp, af, ap, htf, use_xtrend,
                             use_adx=filters.get('use_adx', False),
                             adx_threshold=filters.get('adx_threshold', 25),
                             use_ema=filters.get('use_ema', False),
@@ -536,7 +571,7 @@ def run_matrix_optimization(data, asset, pivot_periods, atr_factors, atr_periods
     
     return results
 
-def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier, 
+def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier, use_xtrend=True,
                    use_adx=False, adx_threshold=25, use_ema=False, ema_period=21):
     """Test parameter combination with comprehensive error handling"""
     try:
@@ -546,43 +581,55 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
         
         # Calculate indicators
         pivot_st = calculate_pivot_supertrend(data, pivot_period, atr_factor, atr_period)
-        x_trend_local = calculate_x_trend(data)
         
-        if not pivot_st or not x_trend_local:
+        if not pivot_st:
             return None
         
-        # Create HTF data safely
-        htf_data = []
-        for i in range(0, len(data), htf_multiplier):
-            try:
-                slice_data = data.iloc[i:min(i + htf_multiplier, len(data))]
-                if len(slice_data) > 0:
-                    htf_bar = pd.DataFrame([{
-                        'time': slice_data.iloc[0]['time'],
-                        'open': slice_data.iloc[0]['open'],
-                        'high': slice_data['high'].max(),
-                        'low': slice_data['low'].min(),
-                        'close': slice_data.iloc[-1]['close'],
-                        'volume': slice_data['volume'].sum()
-                    }])
-                    htf_data.append(htf_bar)
-            except:
-                continue
-        
-        if len(htf_data) < 10:
-            return None
-        
-        htf_df = pd.concat(htf_data, ignore_index=True)
-        x_trend_htf = calculate_x_trend(htf_df)
-        
-        if not x_trend_htf:
-            return None
-        
-        # Map HTF to local timeframe safely
-        htf_mapped = []
-        for i in range(len(data)):
-            htf_index = min(i // htf_multiplier, len(x_trend_htf) - 1)
-            htf_mapped.append(x_trend_htf[htf_index]['x_trend'])
+        # Calculate X Trend only if enabled
+        if use_xtrend:
+            x_trend_local = calculate_x_trend(data)
+            if not x_trend_local:
+                return None
+            
+            # Create HTF data only if htf_multiplier > 1
+            if htf_multiplier > 1:
+                htf_data = []
+                for i in range(0, len(data), htf_multiplier):
+                    try:
+                        slice_data = data.iloc[i:min(i + htf_multiplier, len(data))]
+                        if len(slice_data) > 0:
+                            htf_bar = pd.DataFrame([{
+                                'time': slice_data.iloc[0]['time'],
+                                'open': slice_data.iloc[0]['open'],
+                                'high': slice_data['high'].max(),
+                                'low': slice_data['low'].min(),
+                                'close': slice_data.iloc[-1]['close'],
+                                'volume': slice_data['volume'].sum()
+                            }])
+                            htf_data.append(htf_bar)
+                    except:
+                        continue
+                
+                if len(htf_data) < 10:
+                    return None
+                
+                htf_df = pd.concat(htf_data, ignore_index=True)
+                x_trend_htf = calculate_x_trend(htf_df)
+                
+                if not x_trend_htf:
+                    return None
+                
+                # Map HTF to local timeframe safely
+                htf_mapped = []
+                for i in range(len(data)):
+                    htf_index = min(i // htf_multiplier, len(x_trend_htf) - 1)
+                    htf_mapped.append(x_trend_htf[htf_index]['x_trend'])
+            else:
+                # Use local X Trend (1x timeframe)
+                htf_mapped = [x_trend['x_trend'] for x_trend in x_trend_local]
+        else:
+            # X Trend disabled - create dummy values (won't be used in signals)
+            htf_mapped = [0] * len(data)
         
         # Calculate filters
         adx_values = calculate_adx(data) if use_adx else None
@@ -605,8 +652,14 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
                 pvt_buy = current_trend == 1 and prev_trend == -1
                 pvt_sell = current_trend == -1 and prev_trend == 1
                 
-                x_trend_bullish = htf_mapped[i] == 0
-                x_trend_bearish = htf_mapped[i] == 1
+                # X Trend filter (only if enabled)
+                if use_xtrend:
+                    x_trend_bullish = htf_mapped[i] == 0
+                    x_trend_bearish = htf_mapped[i] == 1
+                else:
+                    # X Trend disabled - always pass
+                    x_trend_bullish = True
+                    x_trend_bearish = True
                 
                 # ADX filter
                 adx_filter_passed = True
@@ -663,6 +716,7 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
             'atr_factor': atr_factor,
             'atr_period': atr_period,
             'htf_multiplier': htf_multiplier,
+            'use_xtrend': use_xtrend,
             'use_adx': use_adx,
             'adx_threshold': adx_threshold if use_adx else None,
             'use_ema': use_ema,
@@ -853,12 +907,26 @@ def main():
     if use_ema:
         st.sidebar.caption("EMA periods to test: 13, 21, 50, 100, 200")
     
-    htf_multipliers = st.sidebar.multiselect(
-        "HTF Multipliers",
-        options=[2, 3, 4, 6, 8],
-        default=[2, 3, 4],
-        help="Higher timeframe multipliers to test"
-    )
+    # X Trend Filter Configuration
+    st.sidebar.subheader("🔄 X Trend Filter")
+    use_xtrend = st.sidebar.checkbox("Use X Trend Filter", value=True, 
+                                    help="Enable/disable X Trend confirmation filter")
+    
+    if use_xtrend:
+        htf_multipliers = st.sidebar.multiselect(
+            "HTF Multipliers (Optional)",
+            options=[2, 3, 4, 6, 8],
+            default=[],
+            help="Higher timeframe multipliers to test. Leave empty to use only local timeframe (1x)"
+        )
+        
+        if htf_multipliers:
+            st.sidebar.caption(f"Will test: 1x (local) + {htf_multipliers}")
+        else:
+            st.sidebar.caption("Will test: 1x (local timeframe only)")
+    else:
+        htf_multipliers = []
+        st.sidebar.caption("⚠️ X Trend filter disabled - using Pivot Supertrend only")
     
     # Main content
     if not all_selected_assets:
@@ -930,7 +998,7 @@ def main():
                     # Sequential optimization based on mode
                     if optimization_mode == "Fast":
                         st.info("🔄 **Sequential Fast Optimization**: Core Parameters → Filters")
-                        results = run_sequential_optimization(data, asset, htf_multipliers, 
+                        results = run_sequential_optimization(data, asset, use_xtrend, htf_multipliers, 
                                                             use_adx, adx_thresholds, use_ema, ema_periods)
                         
                     elif optimization_mode == "Balanced":
@@ -954,7 +1022,7 @@ def main():
                                 })
                         
                         results = run_matrix_optimization(data, asset, pivot_periods, atr_factors, 
-                                                        atr_periods, htf_multipliers, filter_combinations)
+                                                        atr_periods, use_xtrend, htf_multipliers, filter_combinations)
                                 
                     else:  # Comprehensive Mode
                         pivot_periods = [3, 5, 7]
@@ -983,7 +1051,7 @@ def main():
                                     })
                         
                         results = run_matrix_optimization(data, asset, pivot_periods, atr_factors, 
-                                                        atr_periods, htf_multipliers, filter_combinations)
+                                                        atr_periods, use_xtrend, htf_multipliers, filter_combinations)
                     
                     if results:
                         results.sort(key=lambda x: x['score'], reverse=True)
@@ -1061,7 +1129,14 @@ def main():
                         st.write(f"**Pivot Period**: {best['pivot_period']}")
                         st.write(f"**ATR Factor**: {best['atr_factor']}")
                         st.write(f"**ATR Period**: {best['atr_period']}")
-                        st.write(f"**HTF Multiplier**: {best['htf_multiplier']}x")
+                        
+                        if best.get('use_xtrend'):
+                            if best['htf_multiplier'] == 1:
+                                st.write(f"**X Trend Filter**: Enabled (1x - local timeframe)")
+                            else:
+                                st.write(f"**X Trend Filter**: Enabled ({best['htf_multiplier']}x HTF)")
+                        else:
+                            st.write(f"**X Trend Filter**: Disabled")
                         
                         if best.get('use_adx'):
                             st.write(f"**ADX Filter**: Enabled (≥{best.get('adx_threshold', 25)})")
@@ -1087,10 +1162,15 @@ def main():
 prd = {best['pivot_period']}
 Factor = {best['atr_factor']}
 Pd = {best['atr_period']}
-use_xtrend = true
-use_xtrend_htf_color = true
-xtrend_htf_tf = "{timeframe}"
-use_adx = {str(best.get('use_adx', False)).lower()}"""
+use_xtrend = {str(best.get('use_xtrend', True)).lower()}"""
+
+                    if best.get('use_xtrend'):
+                        if best['htf_multiplier'] > 1:
+                            pinescript_settings += f"\nuse_xtrend_htf_color = true\nxtrend_htf_tf = \"{timeframe}\""
+                        else:
+                            pinescript_settings += f"\nuse_xtrend_htf_color = false"
+                    
+                    pinescript_settings += f"\nuse_adx = {str(best.get('use_adx', False)).lower()}"
 
                     if best.get('use_adx'):
                         pinescript_settings += f"\nadx_threshold = {best.get('adx_threshold', 25)}"
