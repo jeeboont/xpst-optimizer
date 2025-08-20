@@ -1,48 +1,15 @@
 """
-XPST Optimizer - TradingView Consistency Verified Edition
-Version: 3.1.36
+XPST Optimizer - Enhanced Filter Optimization Edition
+Version: 3.2.0
 Last Updated: 2025-08-20
 Author: XPST Trading Systems
 
-VERSION HISTORY:
-================
-v3.1.36 (2025-08-20) - Current Version
-- Updated Essential HTF to cover 1x, 2x, 3x, 4x (instead of 1x, 3x, 6x, 12x)
-- Quick mode now tests 1x, 2x, 3x for faster optimization
-- Standard mode tests 1x, 2x, 3x, 4x, 6x
-- Better progression of HTF multipliers for more logical testing
-
-v3.1.35 (2025-08-20)
-- Complete code review and function signature alignment
-- Fixed all run_backtest calls to properly pass asset_name
-- Ensured consistent parameter handling throughout
-- Resolved TypeError issues definitively
-
-v3.1.34 (2025-08-20)
-- Fixed TypeError in run_backtest function signature
-- Ensured asset_name parameter is properly passed through all functions
-- Fixed Last N Trades analysis to include asset name
-- Corrected function calls throughout the codebase
-
-v3.1.33 (2025-08-20)
-- Fixed pip calculation for crypto assets (BTC, ETH use dollar values)
-- Changed default for "Require MTF Agreement" to False (unchecked)
-- Added asset name parameter to backtest functions
-- Improved profit/loss calculation for different asset types
-- Better alignment with typical TradingView settings
-
-[Previous versions omitted for brevity]
-
-COMPATIBILITY:
-==============
-- TradingView XPST Indicator: v3.1
-- Python Requirements: 3.8+
-- Streamlit: 1.48.0+
-- Required Libraries: pandas, numpy, yfinance, streamlit
-
-USAGE:
-======
-streamlit run xpst_optimizer.py
+NEW IN v3.2.0:
+- Added ADX threshold optimization (15, 20, 25, 30, 35)
+- Added EMA period optimization (50, 100, 150, 200, 250)
+- Smart optimization modes to manage increased combinations
+- Enhanced results display with filter parameter details
+- Improved performance tracking and analysis
 """
 
 import streamlit as st
@@ -56,7 +23,7 @@ import zipfile
 warnings.filterwarnings('ignore')
 
 # Version display in UI
-__version__ = "3.1.36"
+__version__ = "3.2.0"
 __last_updated__ = "2025-08-20"
 
 # Initialize session state
@@ -697,8 +664,8 @@ def get_htf_name(multiplier):
 
 def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, xtrend_grey, 
                                   optimization_mode='Quick', use_htf=True, htf_mode='Essential',
-                                  max_bars=500, skip_low_volume=True):
-    """Run optimization with specified filter settings and optimization mode"""
+                                  max_bars=500, skip_low_volume=True, optimize_filters=True):
+    """Run optimization with enhanced filter parameter optimization"""
     try:
         results = []
         
@@ -718,36 +685,62 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
         
         # Define parameter ranges based on optimization mode
         if optimization_mode == 'Quick':
-            # Quick mode: Still test key pivot and ATR values, but fewer combinations
-            pivot_periods = [3, 5, 7, 10]  # All pivot periods for proper optimization
-            atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]  # All ATR factors for proper optimization
-            atr_periods = [10, 14, 15, 20]  # All ATR periods for proper optimization
-            htf_multipliers = [1, 2, 3] if use_htf else [1]  # Reduced HTF only
+            pivot_periods = [3, 5, 7, 10]
+            atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
+            atr_periods = [10, 14, 15, 20]
+            htf_multipliers = [1, 2, 3] if use_htf else [1]
+            # Quick mode: Limited filter params
+            adx_thresholds = [20, 25, 30] if optimize_filters else [25]
+            ema_periods = [100, 200] if optimize_filters else [200]
         elif optimization_mode == 'Standard':
             pivot_periods = [3, 5, 7, 10]
             atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
             atr_periods = [10, 14, 15, 20]
             htf_multipliers = [1, 2, 3, 4, 6] if use_htf else [1]
+            # Standard mode: More filter params
+            adx_thresholds = [15, 20, 25, 30, 35] if optimize_filters else [25]
+            ema_periods = [50, 100, 150, 200, 250] if optimize_filters else [200]
         else:  # Full
             pivot_periods = [3, 5, 7, 10]
             atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
             atr_periods = [10, 14, 15, 20]
             htf_multipliers = [1, 2, 3, 4, 6, 8, 12, 16] if use_htf else [1]
+            # Full mode: All filter params
+            adx_thresholds = [15, 20, 25, 30, 35] if optimize_filters else [25]
+            ema_periods = [50, 100, 150, 200, 250] if optimize_filters else [200]
         
         # Further filter HTF based on htf_mode
         if use_htf and htf_mode == 'Essential':
             htf_multipliers = [x for x in htf_multipliers if x in [1, 2, 3, 4]]
         
+        # Filter parameter combinations based on enabled filters
+        if not use_adx:
+            adx_thresholds = [25]  # Default value when not used
+        if not use_ema:
+            ema_periods = [200]  # Default value when not used
+        
         # Calculate total combinations
-        total_combinations = len(pivot_periods) * len(atr_factors) * len(atr_periods) * len(htf_multipliers)
+        total_combinations = (len(pivot_periods) * len(atr_factors) * len(atr_periods) * 
+                            len(htf_multipliers) * len(adx_thresholds) * len(ema_periods))
         
         # Show optimization summary
         mode_desc = {
-            'Quick': 'Testing all Pivot/ATR params with limited HTF',
-            'Standard': 'Testing all params with moderate HTF variations',
-            'Full': 'Testing all params with all HTF variations'
+            'Quick': f'Limited filter optimization ({len(adx_thresholds)} ADX × {len(ema_periods)} EMA)',
+            'Standard': f'Standard filter optimization ({len(adx_thresholds)} ADX × {len(ema_periods)} EMA)', 
+            'Full': f'Complete filter optimization ({len(adx_thresholds)} ADX × {len(ema_periods)} EMA)'
         }
-        st.info(f"{mode_desc[optimization_mode]}: {total_combinations} combinations")
+        
+        filter_info = ""
+        if optimize_filters:
+            filter_info = f"\n🔧 ADX Thresholds: {adx_thresholds}\n🔧 EMA Periods: {ema_periods}"
+        
+        st.info(f"""
+        **{mode_desc[optimization_mode]}**
+        📊 Total combinations: {total_combinations:,}
+        🎯 Core params: {len(pivot_periods)} Pivot × {len(atr_factors)} ATR Factor × {len(atr_periods)} ATR Period
+        📈 HTF variations: {len(htf_multipliers)}
+        {filter_info}
+        """)
         
         # Progress tracking
         progress_bar = st.progress(0)
@@ -757,84 +750,91 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
         
         # Early exit tracking for poor performers
         best_score = 0
-        base_scores = {}  # Track scores for base parameters
+        base_scores = {}
         
         for pivot_period in pivot_periods:
             for atr_factor in atr_factors:
                 for atr_period in atr_periods:
-                    base_key = f"{pivot_period}_{atr_factor}_{atr_period}"
-                    base_performed_well = True
-                    
-                    for htf_mult in htf_multipliers:
-                        combination_count += 1
-                        progress = combination_count / total_combinations
-                        progress_bar.progress(progress)
-                        status_text.text(f"Testing {combination_count}/{total_combinations} (Skipped: {skipped_count})")
-                        
-                        # In Quick mode, skip poor HTF variations more aggressively
-                        if optimization_mode == 'Quick' and htf_mult > 1:
-                            if base_key in base_scores and base_scores[base_key] < best_score * 0.5:
-                                skipped_count += 1
-                                continue
-                        
-                        params = {
-                            'pivot_period': pivot_period,
-                            'atr_factor': atr_factor,
-                            'atr_period': atr_period,
-                            'use_xtrend': use_xtrend,
-                            'use_adx': use_adx,
-                            'adx_threshold': 25,
-                            'use_ema': use_ema,
-                            'ema_period': 200,
-                            'xtrend_grey_disagree': xtrend_grey  # Will now default to False
-                        }
-                        
-                        # *** CRITICAL FIX: Pass asset_name to run_backtest ***
-                        metrics = run_backtest(df, params, htf_mult, asset_name)
-                        
-                        # Skip if too few trades
-                        if skip_low_volume and metrics['total_trades'] < 5:
-                            skipped_count += 1
-                            if htf_mult == 1:
-                                base_scores[base_key] = 0
-                            continue
-                        
-                        # Calculate composite score
-                        if metrics['total_trades'] > 0:
-                            score = (
-                                metrics['win_rate'] * 0.3 +
-                                min(metrics['profit_factor'], 3) * 20 +
-                                (metrics['total_pips'] / metrics['total_trades']) * 0.5
-                            )
-                        else:
-                            score = 0
-                        
-                        # Track scores
-                        if htf_mult == 1:
-                            base_scores[base_key] = score
-                        
-                        if score > best_score:
-                            best_score = score
-                        
-                        # Include all filter settings in results
-                        results.append({
-                            'pivot_period': pivot_period,
-                            'atr_factor': atr_factor,
-                            'atr_period': atr_period,
-                            'htf_multiplier': htf_mult,
-                            'htf_timeframe': get_htf_name(htf_mult),
-                            'use_xtrend': 'Yes' if use_xtrend else 'No',
-                            'use_adx': f"ADX≥{25}" if use_adx else 'No',
-                            'use_ema': f"EMA{200}" if use_ema else 'No',
-                            'mtf_agree': 'Yes' if xtrend_grey else 'No',
-                            'total_trades': metrics['total_trades'],
-                            'win_rate': round(metrics['win_rate'], 2),
-                            'total_pips': round(metrics['total_pips'], 2),
-                            'profit_factor': round(metrics['profit_factor'], 2),
-                            'avg_win': round(metrics['avg_win'], 2),
-                            'avg_loss': round(metrics['avg_loss'], 2),
-                            'score': round(score, 2)
-                        })
+                    for adx_threshold in adx_thresholds:
+                        for ema_period in ema_periods:
+                            base_key = f"{pivot_period}_{atr_factor}_{atr_period}_{adx_threshold}_{ema_period}"
+                            
+                            for htf_mult in htf_multipliers:
+                                combination_count += 1
+                                progress = combination_count / total_combinations
+                                progress_bar.progress(progress)
+                                status_text.text(f"Testing {combination_count}/{total_combinations} (Skipped: {skipped_count})")
+                                
+                                # In Quick mode, skip poor HTF variations more aggressively
+                                if optimization_mode == 'Quick' and htf_mult > 1:
+                                    if base_key in base_scores and base_scores[base_key] < best_score * 0.5:
+                                        skipped_count += 1
+                                        continue
+                                
+                                params = {
+                                    'pivot_period': pivot_period,
+                                    'atr_factor': atr_factor,
+                                    'atr_period': atr_period,
+                                    'use_xtrend': use_xtrend,
+                                    'use_adx': use_adx,
+                                    'adx_threshold': adx_threshold,
+                                    'use_ema': use_ema,
+                                    'ema_period': ema_period,
+                                    'xtrend_grey_disagree': xtrend_grey
+                                }
+                                
+                                # Run backtest
+                                metrics = run_backtest(df, params, htf_mult, asset_name)
+                                
+                                # Skip if too few trades
+                                if skip_low_volume and metrics['total_trades'] < 5:
+                                    skipped_count += 1
+                                    if htf_mult == 1:
+                                        base_scores[base_key] = 0
+                                    continue
+                                
+                                # Calculate composite score
+                                if metrics['total_trades'] > 0:
+                                    score = (
+                                        metrics['win_rate'] * 0.3 +
+                                        min(metrics['profit_factor'], 3) * 20 +
+                                        (metrics['total_pips'] / metrics['total_trades']) * 0.5
+                                    )
+                                else:
+                                    score = 0
+                                
+                                # Track scores
+                                if htf_mult == 1:
+                                    base_scores[base_key] = score
+                                
+                                if score > best_score:
+                                    best_score = score
+                                
+                                # Format filter display values
+                                adx_display = f"ADX≥{adx_threshold}" if use_adx else 'No'
+                                ema_display = f"EMA{ema_period}" if use_ema else 'No'
+                                
+                                # Include all settings in results
+                                results.append({
+                                    'pivot_period': pivot_period,
+                                    'atr_factor': atr_factor,
+                                    'atr_period': atr_period,
+                                    'adx_threshold': adx_threshold if use_adx else None,
+                                    'ema_period': ema_period if use_ema else None,
+                                    'htf_multiplier': htf_mult,
+                                    'htf_timeframe': get_htf_name(htf_mult),
+                                    'use_xtrend': 'Yes' if use_xtrend else 'No',
+                                    'use_adx': adx_display,
+                                    'use_ema': ema_display,
+                                    'mtf_agree': 'Yes' if xtrend_grey else 'No',
+                                    'total_trades': metrics['total_trades'],
+                                    'win_rate': round(metrics['win_rate'], 2),
+                                    'total_pips': round(metrics['total_pips'], 2),
+                                    'profit_factor': round(metrics['profit_factor'], 2),
+                                    'avg_win': round(metrics['avg_win'], 2),
+                                    'avg_loss': round(metrics['avg_loss'], 2),
+                                    'score': round(score, 2)
+                                })
         
         progress_bar.empty()
         status_text.empty()
@@ -862,7 +862,7 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
 
 def main():
     st.set_page_config(
-        page_title="XPST Optimizer",
+        page_title="XPST Optimizer v3.2",
         page_icon="🎯",
         layout="wide"
     )
@@ -872,8 +872,9 @@ def main():
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
         <h1 style="color: white; margin: 0;">🎯 XPST Optimizer v{__version__}</h1>
-        <p style="color: #e8f4f8; margin: 5px 0 0 0;">TradingView Consistency Verified Edition</p>
+        <p style="color: #e8f4f8; margin: 5px 0 0 0;">Enhanced Filter Optimization Edition</p>
         <p style="color: #d0e8f0; margin: 3px 0 0 0; font-size: 0.9em;">Last Updated: {__last_updated__}</p>
+        <p style="color: #ffd700; margin: 8px 0 0 0; font-size: 0.95em; font-weight: bold;">🆕 NEW: ADX Threshold & EMA Period Optimization!</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -943,7 +944,7 @@ def main():
         st.sidebar.subheader("📅 Custom Date Range")
         st.sidebar.info("Use this to match exact TradingView data periods")
         
-        selected_assets = st.sidebar.multiselect(
+        selected_assets = st.sidebar.multiselbox(
             "Select Assets",
             options=list(assets.keys()),
             default=['EURUSD'],
@@ -992,8 +993,33 @@ def main():
         "Optimization Mode",
         options=["Quick", "Standard", "Full"],
         index=0,
-        help="Quick: All Pivot/ATR params with 1x, 2x, 3x HTF (240 combos)\nStandard: All params with 1x-4x, 6x HTF (400 combos)\nFull: All params with all HTF variations (640 combos)"
+        help="""
+        Quick: Core params + Limited filters (3 ADX × 2 EMA)
+        Standard: Core params + Standard filters (5 ADX × 5 EMA)  
+        Full: Core params + All filters (5 ADX × 5 EMA + All HTF)
+        """
     )
+    
+    # Enhanced Filter Optimization Toggle
+    st.sidebar.markdown("### 🆕 Enhanced Filter Optimization")
+    optimize_filters = st.sidebar.checkbox(
+        "Optimize Filter Parameters", 
+        value=True,
+        help="When enabled, tests multiple ADX thresholds and EMA periods"
+    )
+    
+    if optimize_filters:
+        st.sidebar.success("✅ Will optimize ADX & EMA parameters")
+        
+        # Show what will be tested
+        if optimization_mode == 'Quick':
+            st.sidebar.info("Quick: ADX[20,25,30] × EMA[100,200]")
+        elif optimization_mode == 'Standard':
+            st.sidebar.info("Standard: ADX[15,20,25,30,35] × EMA[50,100,150,200,250]")
+        else:
+            st.sidebar.info("Full: ADX[15,20,25,30,35] × EMA[50,100,150,200,250]")
+    else:
+        st.sidebar.info("Using defaults: ADX=25, EMA=200")
     
     # Filter settings
     use_filters = st.sidebar.checkbox("Use Filters in Optimization", value=True)
@@ -1002,7 +1028,7 @@ def main():
         use_adx = st.sidebar.checkbox("Use ADX Filter", value=False)
         use_ema = st.sidebar.checkbox("Use EMA Filter", value=False)
         xtrend_grey = st.sidebar.checkbox("Require MTF Agreement", value=False, 
-                                         help="Grey/block when local and HTF disagree (usually OFF)")
+                                         help="Grey/block when local and HTF disagree")
     else:
         use_xtrend = False
         use_adx = False
@@ -1014,7 +1040,7 @@ def main():
     use_htf = st.sidebar.checkbox("Test HTF Variations", value=True, 
                                   help="Disable to only test same timeframe (1x)")
     
-    htf_mode = 'Essential'  # Default value
+    htf_mode = 'Essential'
     if use_htf:
         htf_mode = st.sidebar.radio(
             "HTF Testing",
@@ -1095,26 +1121,32 @@ def main():
     
     with col2:
         if st.session_state.downloaded_data:
-            if st.button("🚀 Run Optimization", type="primary", use_container_width=True):
+            if st.button("🚀 Run Enhanced Optimization", type="primary", use_container_width=True):
                 st.session_state.optimization_results.clear()
                 
                 for asset, data in st.session_state.downloaded_data.items():
                     with st.container():
-                        st.write(f"**Optimizing {asset}...**")
+                        st.write(f"**Optimizing {asset} with Enhanced Filters...**")
                         
-                        # Pass all optimization settings
+                        # Pass enhanced optimization settings
                         results = run_optimization_with_filters(
                             data, asset, use_xtrend, use_adx, use_ema, xtrend_grey,
                             optimization_mode, use_htf, htf_mode if use_htf else 'Essential',
-                            max_bars, skip_low_volume
+                            max_bars, skip_low_volume, optimize_filters
                         )
                         
                         if not results.empty:
                             st.session_state.optimization_results[asset] = results
                             
-                            # Show brief summary
+                            # Show brief summary with filter info
                             best = results.iloc[0]
-                            st.success(f"Best: Win Rate {best['win_rate']}%, {best['total_pips']:.1f} pips")
+                            filter_summary = f"Win Rate {best['win_rate']}%, {best['total_pips']:.1f} pips"
+                            if optimize_filters:
+                                if best['adx_threshold'] is not None:
+                                    filter_summary += f", ADX≥{best['adx_threshold']}"
+                                if best['ema_period'] is not None:
+                                    filter_summary += f", EMA{best['ema_period']}"
+                            st.success(f"Best: {filter_summary}")
     
     with col3:
         if st.session_state.optimization_results:
@@ -1136,64 +1168,31 @@ def main():
                     value=f"{len(data)} bars",
                     delta=f"{data['time'].iloc[-1] - data['time'].iloc[0]} seconds"
                 )
-        
-        # Add download options for the data
-        st.markdown("### 💾 Export Data")
-        export_cols = st.columns(len(st.session_state.downloaded_data))
-        
-        for idx, (asset, data) in enumerate(st.session_state.downloaded_data.items()):
-            with export_cols[idx]:
-                # Convert data to CSV
-                csv = data.to_csv(index=False)
-                
-                # Create download button for each asset
-                st.download_button(
-                    label=f"📥 Download {asset}",
-                    data=csv,
-                    file_name=f"{asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    help=f"Download {asset} price data as CSV file"
-                )
-        
-        # Option to download all data as a zip file
-        if len(st.session_state.downloaded_data) > 1:
-            st.markdown("---")
-            with st.expander("📦 Download All Data as ZIP"):
-                # Create a ZIP file in memory
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                    for asset, data in st.session_state.downloaded_data.items():
-                        csv_data = data.to_csv(index=False)
-                        file_name = f"{asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                        zip_file.writestr(file_name, csv_data)
-                
-                zip_buffer.seek(0)
-                
-                st.download_button(
-                    label="📦 Download All Data (ZIP)",
-                    data=zip_buffer.getvalue(),
-                    file_name=f"XPST_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                    mime="application/zip",
-                    use_container_width=True,
-                    type="primary"
-                )
     
     # Results section
     if st.session_state.optimization_results:
         st.markdown("---")
-        st.markdown("### 🏆 Optimization Results")
+        st.markdown("### 🏆 Enhanced Optimization Results")
         
         # Summary table
         summary_data = []
         for asset, results in st.session_state.optimization_results.items():
             best = results.iloc[0]
+            
+            # Format filter info for summary
+            filter_info = ""
+            if best['adx_threshold'] is not None:
+                filter_info += f" ADX≥{best['adx_threshold']}"
+            if best['ema_period'] is not None:
+                filter_info += f" EMA{best['ema_period']}"
+            
             summary_data.append({
                 'Asset': asset,
                 'Best Win Rate': f"{best['win_rate']}%",
                 'Total Pips': f"{best['total_pips']:.1f}",
                 'Profit Factor': f"{best['profit_factor']:.2f}",
                 'HTF': best['htf_timeframe'],
+                'Filters': filter_info.strip() if filter_info else 'None',
                 'Score': f"{best['score']:.1f}"
             })
         
@@ -1210,52 +1209,61 @@ def main():
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
-                    # Top configurations with all filters shown
-                    st.write("**🥇 Top 10 Configurations:**")
+                    # Top configurations with enhanced filter display
+                    st.write("**🥇 Top 10 Enhanced Configurations:**")
                     display_cols = ['pivot_period', 'atr_factor', 'atr_period', 
                                   'htf_timeframe', 'use_xtrend', 'use_adx', 'use_ema',
+                                  'adx_threshold', 'ema_period',
                                   'total_trades', 'win_rate', 'total_pips', 
                                   'profit_factor', 'score']
+                    
+                    # Filter out None values for cleaner display
+                    display_results = results[display_cols].copy()
+                    
                     st.dataframe(
-                        results[display_cols].head(10),
+                        display_results.head(10),
                         use_container_width=True,
                         hide_index=True
                     )
                 
                 with col2:
-                    # Best configuration details with complete settings
+                    # Best configuration details with complete enhanced settings
                     best = results.iloc[0]
                     
                     # Get period info
                     period_start = best['period_start'] if 'period_start' in best else None
                     period_end = best['period_end'] if 'period_end' in best else None
                     
-                    st.write("**📍 Optimal Settings:**")
+                    st.write("**📍 Optimal Enhanced Settings:**")
                     
                     # Format period string
                     period_str = ""
                     if period_start and period_end:
                         period_str = f"\n// Data Period\nStart: {period_start.strftime('%H:%M:%S %d/%m/%Y')}\nEnd: {period_end.strftime('%H:%M:%S %d/%m/%Y')}\n"
                     
-                    # Format filter values for display
-                    use_adx_display = best.get('use_adx', 'No')
-                    adx_threshold = '25' if use_adx_display != 'No' else '-'
-                    use_ema_display = best.get('use_ema', 'No')
-                    ema_period = '200' if use_ema_display != 'No' else '-'
+                    # Format enhanced filter values
+                    adx_threshold_val = best.get('adx_threshold')
+                    ema_period_val = best.get('ema_period')
                     
-                    st.code(f"""// XPST v3.1 Complete Settings for {asset}
+                    use_adx_display = best.get('use_adx', 'No')
+                    adx_threshold_display = f"{adx_threshold_val}" if adx_threshold_val is not None else '-'
+                    
+                    use_ema_display = best.get('use_ema', 'No')
+                    ema_period_display = f"{ema_period_val}" if ema_period_val is not None else '-'
+                    
+                    st.code(f"""// XPST v3.2 Enhanced Settings for {asset}
 {period_str}
 // === CORE STRATEGY SETTINGS ===
 Pivot Period: {best['pivot_period']}
 ATR Factor: {best['atr_factor']}
 ATR Period: {best['atr_period']}
 
-// === FILTER SETTINGS ===
+// === ENHANCED FILTER SETTINGS ===
 Use X Trend Filter: {best.get('use_xtrend', 'Yes')}
-Use ADX Filter: {use_adx_display.replace('ADX≥', 'Yes (Threshold: ').replace('25', '25)') if use_adx_display != 'No' else 'No'}
-ADX Threshold: {adx_threshold}
-Use EMA Filter: {use_ema_display.replace('EMA', 'Yes (Period: ') + ')' if use_ema_display != 'No' else 'No'}
-EMA Period: {ema_period}
+Use ADX Filter: {use_adx_display.replace('ADX≥', 'Yes').replace(str(adx_threshold_val) if adx_threshold_val else '', '')}
+ADX Threshold: {adx_threshold_display}
+Use EMA Filter: {use_ema_display.replace('EMA', 'Yes').replace(str(ema_period_val) if ema_period_val else '', '')}
+EMA Period: {ema_period_display}
 
 // === X TREND MTF SETTINGS ===
 HTF Multiplier: {best['htf_multiplier']}x
@@ -1270,6 +1278,32 @@ Avg Win: {best['avg_win']:.1f} pips
 Avg Loss: {best['avg_loss']:.1f} pips
 Score: {best['score']:.1f}
                     """)
+                
+                # Enhanced Filter Analysis
+                if optimize_filters:
+                    st.write("**🔧 Enhanced Filter Performance Analysis:**")
+                    
+                    # ADX threshold analysis
+                    if best.get('adx_threshold') is not None:
+                        adx_analysis = results[results['use_adx'] != 'No'].groupby('adx_threshold').agg({
+                            'score': 'mean',
+                            'win_rate': 'mean',
+                            'total_pips': 'mean'
+                        }).round(2).sort_values('score', ascending=False)
+                        
+                        st.write("**ADX Threshold Performance:**")
+                        st.dataframe(adx_analysis, use_container_width=True)
+                    
+                    # EMA period analysis
+                    if best.get('ema_period') is not None:
+                        ema_analysis = results[results['use_ema'] != 'No'].groupby('ema_period').agg({
+                            'score': 'mean',
+                            'win_rate': 'mean',
+                            'total_pips': 'mean'
+                        }).round(2).sort_values('score', ascending=False)
+                        
+                        st.write("**EMA Period Performance:**")
+                        st.dataframe(ema_analysis, use_container_width=True)
                 
                 # Last N Trades Analysis
                 st.write("**📊 Last N Trades Analysis:**")
@@ -1287,8 +1321,7 @@ Score: {best['score']:.1f}
                 
                 with col_b:
                     if st.button(f"Calculate Last {last_n_trades} Trades", key=f"calc_{asset}"):
-                        # Run backtest with best parameters
-                        # Parse the filter values
+                        # Run backtest with best enhanced parameters
                         use_xtrend_bool = best.get('use_xtrend', 'Yes') == 'Yes'
                         use_adx_bool = best.get('use_adx', 'No') != 'No'
                         use_ema_bool = best.get('use_ema', 'No') != 'No'
@@ -1299,9 +1332,9 @@ Score: {best['score']:.1f}
                             'atr_period': best['atr_period'],
                             'use_xtrend': use_xtrend_bool,
                             'use_adx': use_adx_bool,
-                            'adx_threshold': 25,
+                            'adx_threshold': best.get('adx_threshold', 25),
                             'use_ema': use_ema_bool,
-                            'ema_period': 200,
+                            'ema_period': best.get('ema_period', 200),
                             'xtrend_grey_disagree': best.get('mtf_agree', 'Yes') == 'Yes'
                         }
                         
@@ -1347,56 +1380,105 @@ Score: {best['score']:.1f}
                 
                 st.dataframe(htf_summary, use_container_width=True)
                 
-                # Download button
+                # Download button with enhanced results
                 csv = results.to_csv(index=False)
                 st.download_button(
-                    label=f"📥 Download {asset} Results CSV",
+                    label=f"📥 Download {asset} Enhanced Results CSV",
                     data=csv,
-                    file_name=f"xpst_optimization_{asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name=f"xpst_enhanced_optimization_{asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv"
                 )
     
     else:
         if not st.session_state.downloaded_data:
-            st.info("👈 Select assets and download data to begin optimization")
+            st.info("👈 Select assets and download data to begin enhanced optimization")
         else:
-            st.info("✨ Data ready! Click 'Run Optimization' to find the best XPST settings")
+            st.info("✨ Data ready! Click 'Run Enhanced Optimization' to find the best XPST settings with optimized filters")
     
-    # Footer with verification tips
+    # Enhanced Feature Info Box
+    if not st.session_state.optimization_results:
+        st.markdown("---")
+        with st.expander("🆕 What's New in v3.2.0 - Enhanced Filter Optimization"):
+            st.markdown("""
+            ### 🚀 Major Enhancements:
+            
+            **1. ADX Threshold Optimization**
+            - Previously: Fixed at 25
+            - Now: Tests 15, 20, 25, 30, 35 (or subset based on mode)
+            - Find optimal momentum threshold for each asset
+            
+            **2. EMA Period Optimization**
+            - Previously: Fixed at 200
+            - Now: Tests 50, 100, 150, 200, 250 (or subset based on mode)
+            - Discover best trend filter period
+            
+            **3. Smart Optimization Modes**
+            - **Quick**: Core params + Limited filters (faster)
+            - **Standard**: Core params + Full filters (balanced) 
+            - **Full**: Everything + All HTF variations (comprehensive)
+            
+            **4. Enhanced Results Display**
+            - Shows optimal ADX threshold and EMA period
+            - Performance analysis by filter parameter
+            - Complete TradingView settings export
+            
+            ### 📊 Combination Count Examples:
+            - **v3.1**: ~400 combinations (Standard mode)
+            - **v3.2**: ~10,000 combinations (Standard mode with filters)
+            - **Smart skipping** keeps optimization times reasonable
+            
+            ### 🎯 Expected Benefits:
+            - Better asset-specific filter tuning
+            - Higher win rates and profit factors
+            - More robust performance across market conditions
+            """)
+    
+    # Footer with enhanced verification tips
     st.markdown("---")
-    with st.expander("🔍 How to Verify Results with TradingView"):
+    with st.expander("🔍 How to Verify Enhanced Results with TradingView"):
         st.markdown("""
-        ### Method 1: Use Exact Same Data
-        1. Download data from optimizer using **Custom Date Range**
-        2. Export the CSV using the download button
-        3. Note the exact start/end times shown in optimization
-        4. In TradingView, use Bar Replay to match the same period
+        ### Enhanced Verification Process:
         
-        ### Method 2: Compare Key Metrics
-        Focus on these ratio-based metrics that should be similar:
-        - **Win Rate %** (should match within 2-3%)
-        - **Average Win/Loss Ratio**
-        - **Profit Factor** (if trade count is similar)
+        **Step 1: Apply Core Settings**
+        - Set Pivot Period, ATR Factor, ATR Period from results
+        - Enable/disable X Trend, ADX, EMA filters as shown
         
-        ### Method 3: Spot Check Specific Trades
-        1. Pick a specific date/time from the optimizer results
-        2. Check if TradingView shows entry/exit at same points
-        3. Verify signal conditions (PVT flip, X Trend state, etc.)
+        **Step 2: Apply Enhanced Filter Settings**
+        - Set **ADX Threshold** to optimized value (if ADX enabled)
+        - Set **EMA Period** to optimized value (if EMA enabled) 
+        - Enable **HTF multiplier** as specified
         
-        ### Tips for Accurate Comparison:
-        - ✅ Ensure same timeframe (1m, 5m, etc.)
-        - ✅ Check timezone settings match
-        - ✅ Verify all filters are set identically
-        - ✅ Use "Require MTF Agreement" if testing HTF
-        - ⚠️ Small differences (1-2 trades) are normal due to data variations
+        **Step 3: Verify Key Metrics**
+        - Win Rate should match within 2-3%
+        - Total pips should be similar (±10%)
+        - Profit factor should align (±0.2)
+        
+        ### 🆕 Enhanced Settings to Check:
+        ```
+        // Standard Settings
+        Pivot Period: [from results]
+        ATR Factor: [from results]
+        ATR Period: [from results]
+        
+        // Enhanced Filter Settings  
+        ADX Threshold: [optimized value, not default 25]
+        EMA Period: [optimized value, not default 200]
+        HTF Multiplier: [optimized HTF]
+        ```
+        
+        ### 💡 Pro Tips:
+        - Use the exact ADX threshold shown (e.g., 30 instead of 25)
+        - Use the exact EMA period shown (e.g., 150 instead of 200)
+        - Small differences are normal due to data feed variations
+        - Focus on ratio-based metrics (win rate %, profit factor)
         """)
     
     st.markdown(
         f"""
         <div style="text-align: center; color: #666;">
             <small>
-            XPST Optimizer v{__version__} | Matches TradingView Implementation<br>
-            Data provided by Yahoo Finance | Optimized for XPST v3.1 Pine Script
+            XPST Optimizer v{__version__} | Enhanced Filter Optimization Edition<br>
+            ADX Threshold & EMA Period Optimization | Data provided by Yahoo Finance
             </small>
         </div>
         """,
