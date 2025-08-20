@@ -861,40 +861,6 @@ def main():
     # Advanced settings
     st.sidebar.subheader("⚙️ Advanced Settings")
     
-    optimization_mode = st.sidebar.selectbox(
-        "🚀 Optimization Mode",
-        options=["Fast", "Balanced", "Comprehensive"],
-        index=0,
-        help="Fast: ~2-5 min, Balanced: ~15-30 min, Comprehensive: ~45-90 min"
-    )
-    
-    if optimization_mode == "Fast":
-        st.sidebar.info("⚡ **Fast Mode**: Sequential optimization (~20-30 combinations)\n\n"
-                       "**Smart Process:**\n"
-                       "• Stage 1: Find optimal Pivot + ATR Factor\n"
-                       "• Stage 2: Optimize ATR Period\n"
-                       "• Stage 3: Optimize HTF Multiplier\n"
-                       "• Stage 4-6: Layer on optimal filters\n\n"
-                       "**Recommended for:**\n"
-                       "• Daily optimization and quick testing\n"
-                       "• Rapid strategy validation\n"
-                       "• High-quality results in minimal time\n"
-                       "• Smart sequential parameter discovery")
-    elif optimization_mode == "Balanced":
-        st.sidebar.info("⚖️ **Balanced Mode**: Tests key combinations (~500-800 combinations)\n\n"
-                       "**Recommended for:**\n" 
-                       "• Weekly optimization for good quality\n"
-                       "• Regular strategy refinement\n"
-                       "• Production trading setups\n"
-                       "• Balance between speed and thoroughness")
-    else:
-        st.sidebar.info("🔬 **Comprehensive Mode**: Tests all combinations (~2000+ combinations)\n\n"
-                       "**Recommended for:**\n"
-                       "• Monthly optimization for maximum quality\n"
-                       "• Final strategy validation\n"
-                       "• Research and backtesting\n"
-                       "• When you need the absolute best parameters")
-    
     min_bars = st.sidebar.number_input("Minimum Bars", 500, 2000, 800)
     
     use_adx = st.sidebar.checkbox("Use ADX Filter", value=False)
@@ -927,6 +893,42 @@ def main():
     else:
         htf_multipliers = []
         st.sidebar.caption("⚠️ X Trend filter disabled - using Pivot Supertrend only")
+    
+    # Optimization Mode (moved to bottom)
+    st.sidebar.subheader("🚀 Optimization Mode")
+    optimization_mode = st.sidebar.selectbox(
+        "Mode",
+        options=["Fast", "Balanced", "Comprehensive"],
+        index=0,
+        help="Fast: ~2-5 min, Balanced: ~15-30 min, Comprehensive: ~45-90 min"
+    )
+    
+    if optimization_mode == "Fast":
+        st.sidebar.info("⚡ **Fast Mode**: Sequential optimization (~20-30 combinations)\n\n"
+                       "**Smart Process:**\n"
+                       "• Stage 1: Find optimal Pivot + ATR Factor\n"
+                       "• Stage 2: Optimize ATR Period\n"
+                       "• Stage 3: Optimize HTF Multiplier\n"
+                       "• Stage 4-6: Layer on optimal filters\n\n"
+                       "**Recommended for:**\n"
+                       "• Daily optimization and quick testing\n"
+                       "• Rapid strategy validation\n"
+                       "• High-quality results in minimal time\n"
+                       "• Smart sequential parameter discovery")
+    elif optimization_mode == "Balanced":
+        st.sidebar.info("⚖️ **Balanced Mode**: Tests key combinations (~500-800 combinations)\n\n"
+                       "**Recommended for:**\n" 
+                       "• Weekly optimization for good quality\n"
+                       "• Regular strategy refinement\n"
+                       "• Production trading setups\n"
+                       "• Balance between speed and thoroughness")
+    else:
+        st.sidebar.info("🔬 **Comprehensive Mode**: Tests all combinations (~2000+ combinations)\n\n"
+                       "**Recommended for:**\n"
+                       "• Monthly optimization for maximum quality\n"
+                       "• Final strategy validation\n"
+                       "• Research and backtesting\n"
+                       "• When you need the absolute best parameters")
     
     # Main content
     if not all_selected_assets:
