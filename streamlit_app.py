@@ -662,3 +662,521 @@ def test_parameters(data, pivot_period, atr_factor, atr_period, htf_multiplier,
             'pivot_period': pivot_period,
             'atr_factor': atr_factor,
             'atr_period': atr_period,
+            'htf_multiplier': htf_multiplier,
+            'use_adx': use_adx,
+            'adx_threshold': adx_threshold if use_adx else None,
+            'use_ema': use_ema,
+            'ema_period': ema_period if use_ema else None,
+            'total_trades': len(trades),
+            'win_rate': win_rate,
+            'total_pips': total_pips,
+            'avg_win': avg_win,
+            'avg_loss': avg_loss,
+            'risk_reward': risk_reward,
+            'score': total_pips * 0.4 + win_rate * 3 + risk_reward * 20
+        }
+    
+    except Exception as e:
+        return None
+
+# Main application
+def main():
+    if not check_password():
+        st.stop()
+    
+    # Header
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%); 
+                padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0;">🎯 XPST Optimizer</h1>
+        <p style="color: #e8f4f8; margin: 5px 0 0 0;">Interactive Trading Strategy Optimizer</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Asset configuration
+    assets = {
+        'BTCUSD': {'yf': 'BTC-USD', 'name': 'Bitcoin/USD', 'type': 'Crypto'},
+        'ETHUSD': {'yf': 'ETH-USD', 'name': 'Ethereum/USD', 'type': 'Crypto'},
+        'XAUUSD': {'yf': 'GC=F', 'name': 'Gold/USD', 'type': 'Commodity'},
+        'EURUSD': {'yf': 'EURUSD=X', 'name': 'Euro/USD', 'type': 'Forex'},
+        'GBPUSD': {'yf': 'GBPUSD=X', 'name': 'GBP/USD', 'type': 'Forex'},
+        'USDJPY': {'yf': 'USDJPY=X', 'name': 'USD/JPY', 'type': 'Forex'},
+        'AUDUSD': {'yf': 'AUDUSD=X', 'name': 'AUD/USD', 'type': 'Forex'},
+        'USDCAD': {'yf': 'USDCAD=X', 'name': 'USD/CAD', 'type': 'Forex'}
+    }
+    
+    # Sidebar configuration
+    st.sidebar.header("📊 Configuration")
+    
+    # Asset selection
+    st.sidebar.subheader("🏦 Select Assets")
+    
+    selected_assets = st.sidebar.multiselect(
+        "Predefined Assets",
+        options=list(assets.keys()),
+        default=['EURUSD'],
+        format_func=lambda x: f"{x} ({assets[x]['name']})"
+    )
+    
+    # Custom ticker input
+    st.sidebar.markdown("**Add Custom Ticker:**")
+    custom_ticker = st.sidebar.text_input(
+        "Enter Symbol (e.g., AAPL, TSLA, SPY)",
+        placeholder="Type ticker symbol...",
+        help="Enter any Yahoo Finance symbol. We'll validate and suggest alternatives if needed."
+    )
+    
+    # Custom ticker validation and addition
+    if custom_ticker:
+        custom_ticker = custom_ticker.upper().strip()
+        
+        if st.sidebar.button(f"➕ Add {custom_ticker}"):
+            test_result = validate_custom_ticker(custom_ticker)
+            
+            if test_result['valid']:
+                custom_key = f"CUSTOM_{custom_ticker}"
+                st.session_state.custom_assets[custom_key] = {
+                    'yf': test_result['symbol'], 
+                    'name': test_result['name'],
+                    'type': 'Custom'
+                }
+                st.sidebar.success(f"✅ Added: {test_result['name']}")
+                st.rerun()
+                
+            else:
+                st.sidebar.error(f"❌ Symbol '{custom_ticker}' not found")
+                if test_result['suggestions']:
+                    st.sidebar.warning("💡 Did you mean one of these?")
+                    for suggestion in test_result['suggestions']:
+                        if st.sidebar.button(f"Use {suggestion}", key=f"suggest_{suggestion}"):
+                            custom_key = f"CUSTOM_{suggestion}"
+                            test_suggestion = validate_custom_ticker(suggestion)
+                            if test_suggestion['valid']:
+                                st.session_state.custom_assets[custom_key] = {
+                                    'yf': test_suggestion['symbol'],
+                                    'name': test_suggestion['name'],
+                                    'type': 'Custom'
+                                }
+                                st.sidebar.success(f"✅ Added: {test_suggestion['name']}")
+                                st.rerun()
+    
+    # Show selected custom assets
+    if st.session_state.custom_assets:
+        st.sidebar.markdown("**Custom Assets Added:**")
+        assets_to_remove = []
+        for asset_key, asset_info in st.session_state.custom_assets.items():
+            col1, col2 = st.sidebar.columns([3, 1])
+            with col1:
+                st.caption(f"• {asset_info['name']}")
+            with col2:
+                if st.button("❌", key=f"remove_{asset_key}", help="Remove"):
+                    assets_to_remove.append(asset_key)
+        
+        for asset_key in assets_to_remove:
+            del st.session_state.custom_assets[asset_key]
+            st.rerun()
+    
+    # Combine all assets and create final selection list
+    all_assets = assets.copy()
+    all_assets.update(st.session_state.custom_assets)
+    custom_asset_keys = list(st.session_state.custom_assets.keys())
+    all_selected_assets = selected_assets + custom_asset_keys
+    
+    # Timeframe selection
+    st.sidebar.subheader("⏰ Timeframe Settings")
+    
+    timeframe = st.sidebar.selectbox(
+        "Timeframe",
+        options=['1m', '5m', '15m', '30m', '1h', '4h', '1d'],
+        index=2  # Default to 15m
+    )
+    
+    timeframe_periods = {
+        '1m': ['1d', '5d', '7d'],
+        '5m': ['1d', '5d', '1mo'],
+        '15m': ['1d', '5d', '1mo', '3mo'],
+        '30m': ['5d', '1mo', '3mo', '6mo'],
+        '1h': ['1mo', '3mo', '6mo', '1y'],
+        '4h': ['1mo', '3mo', '6mo', '1y', '2y'],
+        '1d': ['6mo', '1y', '2y', '5y', '10y', 'max']
+    }
+    
+    available_periods = timeframe_periods[timeframe]
+    period = st.sidebar.selectbox("Period", available_periods, index=len(available_periods)-1)
+    
+    # Advanced settings
+    st.sidebar.subheader("⚙️ Advanced Settings")
+    
+    optimization_mode = st.sidebar.selectbox(
+        "🚀 Optimization Mode",
+        options=["Fast", "Balanced", "Comprehensive"],
+        index=0,
+        help="Fast: ~2-5 min, Balanced: ~15-30 min, Comprehensive: ~45-90 min"
+    )
+    
+    if optimization_mode == "Fast":
+        st.sidebar.info("⚡ **Fast Mode**: Sequential optimization (~20-30 combinations)\n\n"
+                       "**Smart Process:**\n"
+                       "• Stage 1: Find optimal Pivot + ATR Factor\n"
+                       "• Stage 2: Optimize ATR Period\n"
+                       "• Stage 3: Optimize HTF Multiplier\n"
+                       "• Stage 4-6: Layer on optimal filters\n\n"
+                       "**Recommended for:**\n"
+                       "• Daily optimization and quick testing\n"
+                       "• Rapid strategy validation\n"
+                       "• High-quality results in minimal time\n"
+                       "• Smart sequential parameter discovery")
+    elif optimization_mode == "Balanced":
+        st.sidebar.info("⚖️ **Balanced Mode**: Tests key combinations (~500-800 combinations)\n\n"
+                       "**Recommended for:**\n" 
+                       "• Weekly optimization for good quality\n"
+                       "• Regular strategy refinement\n"
+                       "• Production trading setups\n"
+                       "• Balance between speed and thoroughness")
+    else:
+        st.sidebar.info("🔬 **Comprehensive Mode**: Tests all combinations (~2000+ combinations)\n\n"
+                       "**Recommended for:**\n"
+                       "• Monthly optimization for maximum quality\n"
+                       "• Final strategy validation\n"
+                       "• Research and backtesting\n"
+                       "• When you need the absolute best parameters")
+    
+    min_bars = st.sidebar.number_input("Minimum Bars", 500, 2000, 800)
+    
+    use_adx = st.sidebar.checkbox("Use ADX Filter", value=False)
+    adx_thresholds = [20, 25, 30, 35] if use_adx else []
+    if use_adx:
+        st.sidebar.caption("ADX thresholds to test: 20, 25, 30, 35")
+    
+    use_ema = st.sidebar.checkbox("Use EMA Filter", value=False)
+    ema_periods = [13, 21, 50, 100, 200] if use_ema else []
+    if use_ema:
+        st.sidebar.caption("EMA periods to test: 13, 21, 50, 100, 200")
+    
+    htf_multipliers = st.sidebar.multiselect(
+        "HTF Multipliers",
+        options=[2, 3, 4, 6, 8],
+        default=[2, 3, 4],
+        help="Higher timeframe multipliers to test"
+    )
+    
+    # Main content
+    if not all_selected_assets:
+        st.info("👆 Please select at least one asset from the sidebar")
+        st.stop()
+    
+    st.subheader(f"📥 Selected: {len(all_selected_assets)} assets, {timeframe} timeframe")
+    
+    # Download and optimize
+    if st.button("🚀 Download Data & Run Optimization", type="primary"):
+        st.session_state.optimization_results = {}
+        st.session_state.downloaded_data = {}
+        
+        # Download data
+        st.markdown("### 📥 Downloading Data...")
+        downloaded_data = {}
+        
+        progress_bar = st.progress(0)
+        for i, asset in enumerate(all_selected_assets):
+            progress_bar.progress(i / len(all_selected_assets))
+            
+            try:
+                with st.spinner(f"Downloading {asset}..."):
+                    yf_symbol = all_assets[asset]['yf']
+                    ticker = yf.Ticker(yf_symbol)
+                    data = ticker.history(period=period, interval=timeframe)
+                    
+                    if len(data) >= min_bars:
+                        data.reset_index(inplace=True)
+                        if 'Datetime' in data.columns:
+                            data['time'] = data['Datetime']
+                        elif 'Date' in data.columns:
+                            data['time'] = data['Date']
+                        
+                        data.columns = data.columns.str.lower()
+                        downloaded_data[asset] = data
+                        
+                        display_name = all_assets[asset]['name']
+                        st.success(f"✅ {display_name}: {len(data)} bars")
+                    else:
+                        display_name = all_assets[asset]['name']
+                        st.error(f"❌ {display_name}: Only {len(data)} bars (need {min_bars})")
+                
+                time.sleep(0.1)
+            except Exception as e:
+                display_name = all_assets.get(asset, {}).get('name', asset)
+                st.error(f"❌ {display_name}: {str(e)}")
+        
+        progress_bar.progress(1.0)
+        
+        if not downloaded_data:
+            st.error("No data downloaded successfully")
+            st.stop()
+        
+        st.session_state.downloaded_data = downloaded_data
+        
+        # Run optimization
+        st.markdown("### 🔄 Running Optimization...")
+        optimization_results = {}
+        
+        total_assets = len(downloaded_data)
+        main_progress = st.progress(0)
+        
+        for asset_idx, (asset, data) in enumerate(downloaded_data.items()):
+            main_progress.progress(asset_idx / total_assets)
+            
+            with st.spinner(f"Optimizing {asset}... ({asset_idx + 1}/{total_assets})"):
+                try:
+                    # Sequential optimization based on mode
+                    if optimization_mode == "Fast":
+                        st.info("🔄 **Sequential Fast Optimization**: Core Parameters → Filters")
+                        results = run_sequential_optimization(data, asset, htf_multipliers, 
+                                                            use_adx, adx_thresholds, use_ema, ema_periods)
+                        
+                    elif optimization_mode == "Balanced":
+                        # Balanced Mode: Reduced but comprehensive
+                        pivot_periods = [3, 5, 7]
+                        atr_factors = [1.0, 1.25, 1.5]
+                        atr_periods = [10, 15, 20]
+                        
+                        filter_combinations = [{'use_adx': False, 'use_ema': False}]
+                        if use_adx:
+                            for threshold in [25, 30]:
+                                filter_combinations.append({
+                                    'use_adx': True, 'adx_threshold': threshold, 
+                                    'use_ema': False
+                                })
+                        if use_ema:
+                            for period in [21, 50]:
+                                filter_combinations.append({
+                                    'use_adx': False, 
+                                    'use_ema': True, 'ema_period': period
+                                })
+                        
+                        results = run_matrix_optimization(data, asset, pivot_periods, atr_factors, 
+                                                        atr_periods, htf_multipliers, filter_combinations)
+                                
+                    else:  # Comprehensive Mode
+                        pivot_periods = [3, 5, 7]
+                        atr_factors = [1.0, 1.25, 1.5]
+                        atr_periods = [10, 15, 20]
+                        
+                        filter_combinations = [{'use_adx': False, 'use_ema': False}]
+                        if use_adx:
+                            for threshold in adx_thresholds:
+                                filter_combinations.append({
+                                    'use_adx': True, 'adx_threshold': threshold, 
+                                    'use_ema': False
+                                })
+                        if use_ema:
+                            for period in ema_periods:
+                                filter_combinations.append({
+                                    'use_adx': False, 
+                                    'use_ema': True, 'ema_period': period
+                                })
+                        if use_adx and use_ema:
+                            for threshold in adx_thresholds:
+                                for period in ema_periods:
+                                    filter_combinations.append({
+                                        'use_adx': True, 'adx_threshold': threshold,
+                                        'use_ema': True, 'ema_period': period
+                                    })
+                        
+                        results = run_matrix_optimization(data, asset, pivot_periods, atr_factors, 
+                                                        atr_periods, htf_multipliers, filter_combinations)
+                    
+                    if results:
+                        results.sort(key=lambda x: x['score'], reverse=True)
+                        optimization_results[asset] = {
+                            'results': results[:5],
+                            'best': results[0],
+                            'data_info': {
+                                'rows': len(data),
+                                'timeframe': timeframe,
+                                'period': period
+                            }
+                        }
+                        st.success(f"✅ {asset}: {len(results)} configurations found")
+                    else:
+                        st.warning(f"⚠️ {asset}: No profitable configurations found")
+                
+                except Exception as e:
+                    st.error(f"❌ Error optimizing {asset}: {str(e)}")
+        
+        main_progress.progress(1.0)
+        st.session_state.optimization_results = optimization_results
+        st.rerun()
+    
+    # Display results
+    if st.session_state.optimization_results:
+        st.markdown("---")
+        st.subheader("🏆 Optimization Results")
+        
+        results_summary = []
+        for asset, results in st.session_state.optimization_results.items():
+            best = results['best']
+            
+            if asset.startswith('CUSTOM_'):
+                asset_name = st.session_state.custom_assets[asset]['name']
+                asset_type = 'Custom'
+            else:
+                asset_name = assets[asset]['name']  
+                asset_type = assets[asset].get('type', 'Unknown')
+            
+            results_summary.append({
+                'Asset': asset.replace('CUSTOM_', '') if asset.startswith('CUSTOM_') else asset,
+                'Asset Name': asset_name,
+                'Type': asset_type,
+                'Score': best['score'],
+                'Win Rate (%)': best['win_rate'],
+                'Total Pips': best['total_pips'],
+                'Total Trades': best['total_trades'],
+                'Risk:Reward': best['risk_reward']
+            })
+        
+        if results_summary:
+            summary_df = pd.DataFrame(results_summary)
+            summary_df = summary_df.sort_values('Score', ascending=False)
+            
+            st.markdown("### 📊 Performance Summary")
+            st.dataframe(summary_df, use_container_width=True)
+            
+            st.markdown("### 📋 Detailed Results")
+            for asset, results in st.session_state.optimization_results.items():
+                if asset.startswith('CUSTOM_'):
+                    display_name = st.session_state.custom_assets[asset]['name']
+                    asset_display = f"{display_name}"
+                else:
+                    display_name = assets[asset]['name']
+                    asset_display = f"{asset} ({display_name})"
+                    
+                with st.expander(f"📊 {asset_display} - Score: {results['best']['score']:.0f}", expanded=True):
+                    best = results['best']
+                    data_info = results['data_info']
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### 🎯 Optimal Parameters")
+                        st.write(f"**Pivot Period**: {best['pivot_period']}")
+                        st.write(f"**ATR Factor**: {best['atr_factor']}")
+                        st.write(f"**ATR Period**: {best['atr_period']}")
+                        st.write(f"**HTF Multiplier**: {best['htf_multiplier']}x")
+                        
+                        if best.get('use_adx'):
+                            st.write(f"**ADX Filter**: Enabled (≥{best.get('adx_threshold', 25)})")
+                        else:
+                            st.write(f"**ADX Filter**: Disabled")
+                            
+                        if best.get('use_ema'):
+                            st.write(f"**EMA Filter**: Enabled ({best.get('ema_period', 21)} period)")
+                        else:
+                            st.write(f"**EMA Filter**: Disabled")
+                    
+                    with col2:
+                        st.markdown("#### 📈 Performance Metrics")
+                        st.write(f"**Total Trades**: {best['total_trades']}")
+                        st.write(f"**Win Rate**: {best['win_rate']:.1f}%")
+                        st.write(f"**Total Pips**: {best['total_pips']:.2f}")
+                        st.write(f"**Risk:Reward**: {best['risk_reward']:.2f}:1")
+                        st.write(f"**Score**: {best['score']:.0f}")
+                    
+                    # PineScript settings
+                    st.markdown("#### ⚙️ PineScript Settings")
+                    pinescript_settings = f"""// XPST Settings for {asset}
+prd = {best['pivot_period']}
+Factor = {best['atr_factor']}
+Pd = {best['atr_period']}
+use_xtrend = true
+use_xtrend_htf_color = true
+xtrend_htf_tf = "{timeframe}"
+use_adx = {str(best.get('use_adx', False)).lower()}"""
+
+                    if best.get('use_adx'):
+                        pinescript_settings += f"\nadx_threshold = {best.get('adx_threshold', 25)}"
+                    
+                    pinescript_settings += f"\nuse_ema = {str(best.get('use_ema', False)).lower()}"
+                    
+                    if best.get('use_ema'):
+                        pinescript_settings += f"\nema_period = {best.get('ema_period', 21)}"
+                    
+                    st.code(pinescript_settings, language="pinescript")
+                    
+                    # Top configurations table
+                    st.markdown("#### 📋 Top 5 Configurations")
+                    top_configs = []
+                    for i, result in enumerate(results['results'][:5]):
+                        top_configs.append({
+                            'Rank': i + 1,
+                            'PP': result['pivot_period'],
+                            'ATR Factor': result['atr_factor'],
+                            'ATR Period': result['atr_period'],
+                            'HTF': f"{result['htf_multiplier']}x",
+                            'Trades': result['total_trades'],
+                            'Win%': f"{result['win_rate']:.1f}%",
+                            'Pips': f"{result['total_pips']:.0f}",
+                            'Score': f"{result['score']:.0f}"
+                        })
+                    
+                    config_df = pd.DataFrame(top_configs)
+                    st.dataframe(config_df, use_container_width=True)
+            
+            # Export functionality
+            st.markdown("### 💾 Export Results")
+            
+            export_data = []
+            for asset, results in st.session_state.optimization_results.items():
+                best = results['best']
+                data_info = results['data_info']
+                
+                if asset.startswith('CUSTOM_'):
+                    asset_name = st.session_state.custom_assets[asset]['name']
+                    asset_type = 'Custom'
+                else:
+                    asset_name = assets[asset]['name']
+                    asset_type = assets[asset].get('type', 'Unknown')
+                
+                export_data.append({
+                    'Asset': asset.replace('CUSTOM_', '') if asset.startswith('CUSTOM_') else asset,
+                    'Asset_Name': asset_name,
+                    'Asset_Type': asset_type,
+                    'Data_Bars': data_info['rows'],
+                    'Timeframe': data_info['timeframe'],
+                    'Period': data_info['period'],
+                    'Optimal_Pivot_Period': best['pivot_period'],
+                    'Optimal_ATR_Factor': best['atr_factor'],
+                    'Optimal_ATR_Period': best['atr_period'],
+                    'Optimal_HTF_Multiplier': best['htf_multiplier'],
+                    'Use_ADX': best.get('use_adx', False),
+                    'ADX_Threshold': best.get('adx_threshold', ''),
+                    'Use_EMA': best.get('use_ema', False),
+                    'EMA_Period': best.get('ema_period', ''),
+                    'Total_Trades': best['total_trades'],
+                    'Win_Rate': best['win_rate'],
+                    'Total_Pips': best['total_pips'],
+                    'Risk_Reward': best['risk_reward'],
+                    'Score': best['score']
+                })
+            
+            export_df = pd.DataFrame(export_data)
+            csv = export_df.to_csv(index=False)
+            
+            st.download_button(
+                label="📁 Download Results as CSV",
+                data=csv,
+                file_name=f"XPST_Optimization_Results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.warning("No optimization results found. Please try different settings or assets.")
+    
+    elif st.session_state.downloaded_data and not st.session_state.optimization_results:
+        st.info("📊 Data downloaded. Click the optimization button to start the analysis.")
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("🎯 **XPST Optimizer** | Built with Streamlit & Yahoo Finance")
+
+if __name__ == "__main__":
+    main()
