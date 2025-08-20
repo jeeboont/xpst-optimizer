@@ -23,23 +23,72 @@ def calculate_pivot_points(df, period=5):
         if len(df) < period * 2 + 1:
             return pd.Series(index=df.index, dtype=float), pd.Series(index=df.index, dtype=float)
         
-        high_values = df['high'].rolling(window=2*period+1, center=True).apply(
-            lambda x: x[period] if len(x) == 2*period+1 and x[period] == max(x) else np.nan
-        )
+        pivot_highs = pd.Series(index=df.index, dtype=float)
+        pivot_lows = pd.Series(index=df.index, dtype=float)
         
-        low_values = df['low'].rolling(window=2*period+1, center=True).apply(
-            lambda x: x[period] if len(x) == 2*period+1 and x[period] == min(x) else np.nan
-        )
+        # Calculate pivots manually to match TradingView logic
+        for i in range(period, len(df) - period):
+            # Check for pivot high
+            is_pivot_high = True
+            high_val = df['high'].iloc[i]
+            
+            # Check left side
+            for j in range(i - period, i):
+                if df['high'].iloc[j] >= high_val:
+                    is_pivot_high = False
+                    break
+            
+            # Check right side
+            if is_pivot_high:
+                for j in range(i + 1, i + period + 1):
+                    if j < len(df) and df['high'].iloc[j] > high_val:
+                        is_pivot_high = False
+                        break
+            
+            if is_pivot_high:
+                pivot_highs.iloc[i] = high_val
+            
+            # Check for pivot low
+            is_pivot_low = True
+            low_val = df['low'].iloc[i]
+            
+            # Check left side
+            for j in range(i - period, i):
+                if df['low'].iloc[j] <= low_val:
+                    is_pivot_low = False
+                    break
+            
+            # Check right side
+            if is_pivot_low:
+                for j in range(i + 1, i + period + 1):
+                    if j < len(df) and df['low'].iloc[j] < low_val:
+                        is_pivot_low = False
+                        break
+            
+            if is_pivot_low:
+                pivot_lows.iloc[i] = low_val
         
-        return high_values, low_values
+        return pivot_highs, pivot_lows
+        
     except Exception as e:
-        st.error(f"Error in pivot calculation: {e}")
+        print(f"Pivot calculation error details: {e}")
         return pd.Series(index=df.index, dtype=float), pd.Series(index=df.index, dtype=float)
 
 def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=15):
     """Calculate Pivot Supertrend based on TradingView XPST v3.1"""
     try:
         df = df.copy()
+        
+        # Ensure numeric types
+        for col in ['open', 'high', 'low', 'close']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Check for sufficient data
+        if len(df) < max(pivot_period * 2 + 1, atr_period):
+            print(f"Insufficient data: {len(df)} rows, need at least {max(pivot_period * 2 + 1, atr_period)}")
+            df['pvt_trend'] = 1
+            df['pvt_signal'] = 0
+            return df
         
         # Calculate pivot points
         pivot_highs, pivot_lows = calculate_pivot_points(df, pivot_period)
@@ -63,13 +112,20 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
                     center.iloc[i] = (center.iloc[i-1] * 2 + last_pivot.iloc[i]) / 3
             elif i > 0:
                 center.iloc[i] = center.iloc[i-1]
+            else:
+                center.iloc[i] = df['close'].iloc[0]  # Fallback to close price
         
         # Calculate ATR
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift())
         low_close = np.abs(df['low'] - df['close'].shift())
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        atr = true_range.rolling(window=atr_period).mean()
+        atr = true_range.rolling(window=atr_period, min_periods=1).mean()
+        
+        # Fill any NaN values in ATR
+        atr = atr.fillna(method='bfill').fillna(method='ffill')
+        if atr.isna().all():
+            atr = pd.Series(0.0001, index=df.index)  # Fallback value
         
         # Calculate bands
         up = center - (atr_factor * atr)
@@ -80,18 +136,24 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
         tdown = pd.Series(index=df.index, dtype=float)
         trend = pd.Series(index=df.index, dtype=int)
         
+        # Set initial values
+        if len(df) > 0:
+            tup.iloc[0] = up.iloc[0] if not pd.isna(up.iloc[0]) else df['low'].iloc[0]
+            tdown.iloc[0] = down.iloc[0] if not pd.isna(down.iloc[0]) else df['high'].iloc[0]
+            trend.iloc[0] = 1
+        
         for i in range(1, len(df)):
             # Update TUp
             if df['close'].iloc[i-1] > tup.iloc[i-1] if not pd.isna(tup.iloc[i-1]) else False:
-                tup.iloc[i] = max(up.iloc[i], tup.iloc[i-1]) if not pd.isna(tup.iloc[i-1]) else up.iloc[i]
+                tup.iloc[i] = max(up.iloc[i], tup.iloc[i-1]) if not pd.isna(tup.iloc[i-1]) and not pd.isna(up.iloc[i]) else up.iloc[i]
             else:
-                tup.iloc[i] = up.iloc[i]
+                tup.iloc[i] = up.iloc[i] if not pd.isna(up.iloc[i]) else tup.iloc[i-1]
             
             # Update TDown
             if df['close'].iloc[i-1] < tdown.iloc[i-1] if not pd.isna(tdown.iloc[i-1]) else False:
-                tdown.iloc[i] = min(down.iloc[i], tdown.iloc[i-1]) if not pd.isna(tdown.iloc[i-1]) else down.iloc[i]
+                tdown.iloc[i] = min(down.iloc[i], tdown.iloc[i-1]) if not pd.isna(tdown.iloc[i-1]) and not pd.isna(down.iloc[i]) else down.iloc[i]
             else:
-                tdown.iloc[i] = down.iloc[i]
+                tdown.iloc[i] = down.iloc[i] if not pd.isna(down.iloc[i]) else tdown.iloc[i-1]
             
             # Determine trend
             if df['close'].iloc[i] > tdown.iloc[i-1] if not pd.isna(tdown.iloc[i-1]) else False:
@@ -101,20 +163,23 @@ def calculate_pivot_supertrend(df, pivot_period=5, atr_factor=1.25, atr_period=1
             else:
                 trend.iloc[i] = trend.iloc[i-1] if i > 0 else 1
         
-        # Set initial values
-        if len(df) > 0:
-            tup.iloc[0] = up.iloc[0]
-            tdown.iloc[0] = down.iloc[0]
-            trend.iloc[0] = 1
-        
         df['pvt_trend'] = trend
         df['pvt_tup'] = tup
         df['pvt_tdown'] = tdown
         df['pvt_signal'] = trend.diff().fillna(0)
         
         return df
+        
     except Exception as e:
-        st.error(f"Error in Pivot Supertrend calculation: {e}")
+        print(f"Error in Pivot Supertrend calculation: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return df with default values
+        df['pvt_trend'] = 1
+        df['pvt_signal'] = 0
+        df['pvt_tup'] = df['low']
+        df['pvt_tdown'] = df['high']
         return df
 
 def calculate_x_trend(df):
