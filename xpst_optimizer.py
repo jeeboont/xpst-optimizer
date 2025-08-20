@@ -687,10 +687,8 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
                             'htf_multiplier': htf_mult,
                             'htf_timeframe': get_htf_name(htf_mult),
                             'use_xtrend': 'Yes' if use_xtrend else 'No',
-                            'use_adx': 'Yes' if use_adx else 'No',
-                            'adx_threshold': 25 if use_adx else '-',
-                            'use_ema': 'Yes' if use_ema else 'No',
-                            'ema_period': 200 if use_ema else '-',
+                            'use_adx': f"ADX≥{25}" if use_adx else 'No',
+                            'use_ema': f"EMA{200}" if use_ema else 'No',
                             'mtf_agree': 'Yes' if xtrend_grey else 'No',
                             'total_trades': metrics['total_trades'],
                             'win_rate': round(metrics['win_rate'], 2),
@@ -1067,6 +1065,12 @@ def main():
                     if period_start and period_end:
                         period_str = f"\n// Data Period\nStart: {period_start.strftime('%H:%M:%S %d/%m/%Y')}\nEnd: {period_end.strftime('%H:%M:%S %d/%m/%Y')}\n"
                     
+                    # Format filter values for display
+                    use_adx_display = best.get('use_adx', 'No')
+                    adx_threshold = '25' if use_adx_display != 'No' else '-'
+                    use_ema_display = best.get('use_ema', 'No')
+                    ema_period = '200' if use_ema_display != 'No' else '-'
+                    
                     st.code(f"""// XPST v3.1 Complete Settings for {asset}
 {period_str}
 // === CORE STRATEGY SETTINGS ===
@@ -1076,10 +1080,10 @@ ATR Period: {best['atr_period']}
 
 // === FILTER SETTINGS ===
 Use X Trend Filter: {best.get('use_xtrend', 'Yes')}
-Use ADX Filter: {best.get('use_adx', 'No')}
-ADX Threshold: {best.get('adx_threshold', 25)}
-Use EMA Filter: {best.get('use_ema', 'No')}
-EMA Period: {best.get('ema_period', 200)}
+Use ADX Filter: {use_adx_display.replace('ADX≥', 'Yes (Threshold: ').replace('25', '25)') if use_adx_display != 'No' else 'No'}
+ADX Threshold: {adx_threshold}
+Use EMA Filter: {use_ema_display.replace('EMA', 'Yes (Period: ') + ')' if use_ema_display != 'No' else 'No'}
+EMA Period: {ema_period}
 
 // === X TREND MTF SETTINGS ===
 HTF Multiplier: {best['htf_multiplier']}x
@@ -1112,14 +1116,19 @@ Score: {best['score']:.1f}
                 with col_b:
                     if st.button(f"Calculate Last {last_n_trades} Trades", key=f"calc_{asset}"):
                         # Run backtest with best parameters
+                        # Parse the filter values
+                        use_xtrend_bool = best.get('use_xtrend', 'Yes') == 'Yes'
+                        use_adx_bool = best.get('use_adx', 'No') != 'No'
+                        use_ema_bool = best.get('use_ema', 'No') != 'No'
+                        
                         best_params = {
                             'pivot_period': best['pivot_period'],
                             'atr_factor': best['atr_factor'],
                             'atr_period': best['atr_period'],
-                            'use_xtrend': best.get('use_xtrend', 'Yes') == 'Yes',
-                            'use_adx': best.get('use_adx', 'No') == 'Yes',
+                            'use_xtrend': use_xtrend_bool,
+                            'use_adx': use_adx_bool,
                             'adx_threshold': 25,
-                            'use_ema': best.get('use_ema', 'No') == 'Yes',
+                            'use_ema': use_ema_bool,
                             'ema_period': 200,
                             'xtrend_grey_disagree': best.get('mtf_agree', 'Yes') == 'Yes'
                         }
@@ -1143,11 +1152,12 @@ Score: {best['score']:.1f}
                                 last_n_win_rate = (last_n_wins / len(last_trades) * 100) if last_trades else 0
                                 
                                 st.success(f"""
-                                **Last {len(last_trades)} Trades Performance:**
+                                **Last {last_n_trades} Trades Performance:**
                                 - Win Rate: {last_n_win_rate:.1f}%
                                 - Total Pips: {last_n_pips:.1f}
                                 - Wins/Losses: {last_n_wins}/{last_n_losses}
                                 - Avg per Trade: {last_n_pips/len(last_trades):.1f} pips
+                                - Actual Trades Analyzed: {len(last_trades)}
                                 """)
                             else:
                                 st.warning("No trades found with these settings")
