@@ -1,12 +1,18 @@
 """
 XPST Optimizer - TradingView Consistency Verified Edition
-Version: 3.1.35
+Version: 3.1.36
 Last Updated: 2025-08-20
 Author: XPST Trading Systems
 
 VERSION HISTORY:
 ================
-v3.1.35 (2025-08-20) - Current Version
+v3.1.36 (2025-08-20) - Current Version
+- Updated Essential HTF to cover 1x, 2x, 3x, 4x (instead of 1x, 3x, 6x, 12x)
+- Quick mode now tests 1x, 2x, 3x for faster optimization
+- Standard mode tests 1x, 2x, 3x, 4x, 6x
+- Better progression of HTF multipliers for more logical testing
+
+v3.1.35 (2025-08-20)
 - Complete code review and function signature alignment
 - Fixed all run_backtest calls to properly pass asset_name
 - Ensured consistent parameter handling throughout
@@ -50,7 +56,7 @@ import zipfile
 warnings.filterwarnings('ignore')
 
 # Version display in UI
-__version__ = "3.1.35"
+__version__ = "3.1.36"
 __last_updated__ = "2025-08-20"
 
 # Initialize session state
@@ -716,12 +722,12 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
             pivot_periods = [3, 5, 7, 10]  # All pivot periods for proper optimization
             atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]  # All ATR factors for proper optimization
             atr_periods = [10, 14, 15, 20]  # All ATR periods for proper optimization
-            htf_multipliers = [1, 3, 6] if use_htf else [1]  # Reduced HTF only
+            htf_multipliers = [1, 2, 3] if use_htf else [1]  # Reduced HTF only
         elif optimization_mode == 'Standard':
             pivot_periods = [3, 5, 7, 10]
             atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
             atr_periods = [10, 14, 15, 20]
-            htf_multipliers = [1, 2, 3, 6, 12] if use_htf else [1]
+            htf_multipliers = [1, 2, 3, 4, 6] if use_htf else [1]
         else:  # Full
             pivot_periods = [3, 5, 7, 10]
             atr_factors = [1.0, 1.25, 1.5, 2.0, 2.5]
@@ -730,7 +736,7 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
         
         # Further filter HTF based on htf_mode
         if use_htf and htf_mode == 'Essential':
-            htf_multipliers = [x for x in htf_multipliers if x in [1, 3, 6, 12]]
+            htf_multipliers = [x for x in htf_multipliers if x in [1, 2, 3, 4]]
         
         # Calculate total combinations
         total_combinations = len(pivot_periods) * len(atr_factors) * len(atr_periods) * len(htf_multipliers)
@@ -986,7 +992,7 @@ def main():
         "Optimization Mode",
         options=["Quick", "Standard", "Full"],
         index=0,
-        help="Quick: All Pivot/ATR params with limited HTF (240 combos)\nStandard: All params with moderate HTF (400 combos)\nFull: All params with all HTF variations (640 combos)"
+        help="Quick: All Pivot/ATR params with 1x, 2x, 3x HTF (240 combos)\nStandard: All params with 1x-4x, 6x HTF (400 combos)\nFull: All params with all HTF variations (640 combos)"
     )
     
     # Filter settings
@@ -1014,7 +1020,7 @@ def main():
             "HTF Testing",
             options=["Essential", "All"],
             index=0,
-            help="Essential: Tests 1x, 3x, 6x, 12x\nAll: Tests all multipliers"
+            help="Essential: Tests 1x, 2x, 3x, 4x\nAll: Tests all multipliers"
         )
     
     # Advanced settings (collapsible)
