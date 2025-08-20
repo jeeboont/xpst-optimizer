@@ -302,8 +302,8 @@ def apply_htf_x_trend(df, base_timeframe, htf_multiplier):
         df['htf_x_trend'] = df['x_trend']
         return df
 
-def run_backtest(df, params, htf_multiplier=None):
-    """Run backtest with exact XPST v3.1 logic"""
+def run_backtest_with_trades(df, params, htf_multiplier=None):
+    """Run backtest and return both metrics and trade list"""
     try:
         # Calculate indicators
         df = calculate_pivot_supertrend(df, 
@@ -326,6 +326,7 @@ def run_backtest(df, params, htf_multiplier=None):
         signals = []
         position = None
         entry_price = None
+        entry_time = None
         
         # Track pending signals
         pvt_buy_pending = False
@@ -398,9 +399,11 @@ def run_backtest(df, params, htf_multiplier=None):
                 if buy_signal:
                     position = 'long'
                     entry_price = row['close']
+                    entry_time = i
                 elif sell_signal:
                     position = 'short'
                     entry_price = row['close']
+                    entry_time = i
             elif position == 'long':
                 # Exit conditions for long
                 exit_signal = sell_signal or (row['pvt_trend'] == -1)
@@ -416,8 +419,8 @@ def run_backtest(df, params, htf_multiplier=None):
                 if exit_signal:
                     profit_pips = (row['close'] - entry_price) / 0.0001  # Forex pips
                     signals.append({
-                        'entry_time': df.index[i-1],
-                        'exit_time': df.index[i],
+                        'entry_time': entry_time,
+                        'exit_time': i,
                         'direction': 'long',
                         'entry_price': entry_price,
                         'exit_price': row['close'],
@@ -440,8 +443,8 @@ def run_backtest(df, params, htf_multiplier=None):
                 if exit_signal:
                     profit_pips = (entry_price - row['close']) / 0.0001  # Forex pips
                     signals.append({
-                        'entry_time': df.index[i-1],
-                        'exit_time': df.index[i],
+                        'entry_time': entry_time,
+                        'exit_time': i,
                         'direction': 'short',
                         'entry_price': entry_price,
                         'exit_price': row['close'],
@@ -478,10 +481,10 @@ def run_backtest(df, params, htf_multiplier=None):
                 'profit_factor': 0
             }
         
-        return metrics
+        return metrics, signals
         
     except Exception as e:
-        st.error(f"Error in backtest: {e}")
+        print(f"Error in backtest: {e}")
         return {
             'total_trades': 0,
             'winning_trades': 0,
@@ -491,7 +494,12 @@ def run_backtest(df, params, htf_multiplier=None):
             'avg_win': 0,
             'avg_loss': 0,
             'profit_factor': 0
-        }
+        }, []
+
+def run_backtest(df, params, htf_multiplier=None):
+    """Run backtest with exact XPST v3.1 logic (wrapper for compatibility)"""
+    metrics, _ = run_backtest_with_trades(df, params, htf_multiplier)
+    return metrics
 
 def download_data(symbol, period='1mo', interval='5m'):
     """Download data from Yahoo Finance"""
@@ -562,6 +570,15 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
         if len(df) > max_bars:
             df = df.tail(max_bars)
             st.info(f"Using last {max_bars} bars for faster processing")
+        
+        # Store data period info
+        if 'datetime' in df.columns:
+            period_start = pd.to_datetime(df['datetime'].iloc[0])
+            period_end = pd.to_datetime(df['datetime'].iloc[-1])
+        else:
+            # Convert timestamp to datetime if needed
+            period_start = pd.to_datetime(df['time'].iloc[0], unit='s')
+            period_end = pd.to_datetime(df['time'].iloc[-1], unit='s')
         
         # Define parameter ranges based on optimization mode
         if optimization_mode == 'Quick':
@@ -662,12 +679,19 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
                         if score > best_score:
                             best_score = score
                         
+                        # Include all filter settings in results
                         results.append({
                             'pivot_period': pivot_period,
                             'atr_factor': atr_factor,
                             'atr_period': atr_period,
                             'htf_multiplier': htf_mult,
                             'htf_timeframe': get_htf_name(htf_mult),
+                            'use_xtrend': 'Yes' if use_xtrend else 'No',
+                            'use_adx': 'Yes' if use_adx else 'No',
+                            'adx_threshold': 25 if use_adx else '-',
+                            'use_ema': 'Yes' if use_ema else 'No',
+                            'ema_period': 200 if use_ema else '-',
+                            'mtf_agree': 'Yes' if xtrend_grey else 'No',
                             'total_trades': metrics['total_trades'],
                             'win_rate': round(metrics['win_rate'], 2),
                             'total_pips': round(metrics['total_pips'], 2),
@@ -686,6 +710,10 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
         # Convert to DataFrame and sort
         results_df = pd.DataFrame(results)
         results_df = results_df.sort_values('score', ascending=False)
+        
+        # Add period info to results
+        results_df['period_start'] = period_start
+        results_df['period_end'] = period_end
         
         return results_df
         
@@ -1012,11 +1040,12 @@ def main():
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
-                    # Top configurations
+                    # Top configurations with all filters shown
                     st.write("**🥇 Top 10 Configurations:**")
                     display_cols = ['pivot_period', 'atr_factor', 'atr_period', 
-                                  'htf_timeframe', 'total_trades', 'win_rate', 
-                                  'total_pips', 'profit_factor', 'score']
+                                  'htf_timeframe', 'use_xtrend', 'use_adx', 'use_ema',
+                                  'total_trades', 'win_rate', 'total_pips', 
+                                  'profit_factor', 'score']
                     st.dataframe(
                         results[display_cols].head(10),
                         use_container_width=True,
@@ -1024,22 +1053,106 @@ def main():
                     )
                 
                 with col2:
-                    # Best configuration details
+                    # Best configuration details with complete settings
                     best = results.iloc[0]
+                    
+                    # Get period info
+                    period_start = best['period_start'] if 'period_start' in best else None
+                    period_end = best['period_end'] if 'period_end' in best else None
+                    
                     st.write("**📍 Optimal Settings:**")
-                    st.code(f"""
-// XPST v3.1 Settings for {asset}
+                    
+                    # Format period string
+                    period_str = ""
+                    if period_start and period_end:
+                        period_str = f"\n// Data Period\nStart: {period_start.strftime('%H:%M:%S %d/%m/%Y')}\nEnd: {period_end.strftime('%H:%M:%S %d/%m/%Y')}\n"
+                    
+                    st.code(f"""// XPST v3.1 Complete Settings for {asset}
+{period_str}
+// === CORE STRATEGY SETTINGS ===
 Pivot Period: {best['pivot_period']}
 ATR Factor: {best['atr_factor']}
 ATR Period: {best['atr_period']}
-HTF Multiplier: {best['htf_multiplier']}x
 
-// Performance
+// === FILTER SETTINGS ===
+Use X Trend Filter: {best.get('use_xtrend', 'Yes')}
+Use ADX Filter: {best.get('use_adx', 'No')}
+ADX Threshold: {best.get('adx_threshold', 25)}
+Use EMA Filter: {best.get('use_ema', 'No')}
+EMA Period: {best.get('ema_period', 200)}
+
+// === X TREND MTF SETTINGS ===
+HTF Multiplier: {best['htf_multiplier']}x
+MTF Agreement Required: {best.get('mtf_agree', 'Yes')}
+
+// === PERFORMANCE METRICS ===
 Win Rate: {best['win_rate']}%
 Total Trades: {best['total_trades']}
 Total Pips: {best['total_pips']:.1f}
 Profit Factor: {best['profit_factor']:.2f}
+Avg Win: {best['avg_win']:.1f} pips
+Avg Loss: {best['avg_loss']:.1f} pips
+Score: {best['score']:.1f}
                     """)
+                
+                # Last N Trades Analysis
+                st.write("**📊 Last N Trades Analysis:**")
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    last_n_trades = st.number_input(
+                        "Analyze last N trades",
+                        min_value=10,
+                        max_value=100,
+                        value=30,
+                        step=10,
+                        key=f"last_n_{asset}"
+                    )
+                
+                with col_b:
+                    if st.button(f"Calculate Last {last_n_trades} Trades", key=f"calc_{asset}"):
+                        # Run backtest with best parameters
+                        best_params = {
+                            'pivot_period': best['pivot_period'],
+                            'atr_factor': best['atr_factor'],
+                            'atr_period': best['atr_period'],
+                            'use_xtrend': best.get('use_xtrend', 'Yes') == 'Yes',
+                            'use_adx': best.get('use_adx', 'No') == 'Yes',
+                            'adx_threshold': 25,
+                            'use_ema': best.get('use_ema', 'No') == 'Yes',
+                            'ema_period': 200,
+                            'xtrend_grey_disagree': best.get('mtf_agree', 'Yes') == 'Yes'
+                        }
+                        
+                        # Get the data for this asset
+                        asset_data = st.session_state.downloaded_data.get(asset)
+                        if asset_data is not None:
+                            # Run full backtest to get trade details
+                            full_metrics, trade_list = run_backtest_with_trades(
+                                asset_data, best_params, best['htf_multiplier']
+                            )
+                            
+                            if trade_list and len(trade_list) > 0:
+                                # Analyze last N trades
+                                last_trades = trade_list[-last_n_trades:] if len(trade_list) >= last_n_trades else trade_list
+                                
+                                # Calculate metrics for last N trades
+                                last_n_pips = sum([t['profit_pips'] for t in last_trades])
+                                last_n_wins = len([t for t in last_trades if t['profit_pips'] > 0])
+                                last_n_losses = len([t for t in last_trades if t['profit_pips'] < 0])
+                                last_n_win_rate = (last_n_wins / len(last_trades) * 100) if last_trades else 0
+                                
+                                st.success(f"""
+                                **Last {len(last_trades)} Trades Performance:**
+                                - Win Rate: {last_n_win_rate:.1f}%
+                                - Total Pips: {last_n_pips:.1f}
+                                - Wins/Losses: {last_n_wins}/{last_n_losses}
+                                - Avg per Trade: {last_n_pips/len(last_trades):.1f} pips
+                                """)
+                            else:
+                                st.warning("No trades found with these settings")
+                        else:
+                            st.error("Data not found for this asset")
                 
                 # HTF Analysis
                 st.write("**📊 HTF Performance Analysis:**")
