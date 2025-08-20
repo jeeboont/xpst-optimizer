@@ -1,3 +1,62 @@
+"""
+XPST Optimizer - TradingView Consistency Verified Edition
+Version: 3.1.25
+Last Updated: 2025-08-20
+Author: XPST Trading Systems
+
+VERSION HISTORY:
+================
+v3.1.25 (2025-08-20) - Current Version
+- Fixed Last N Trades heading to show requested number instead of actual
+- Updated filter display to show ADX≥25 and EMA200 format in tables
+- Added complete XPST settings display with all filters and thresholds
+- Added data period context (start/end timestamps) to optimization results
+- Implemented Last N Trades analysis feature (10-100 trades)
+- Added data export functionality for downloaded price data (CSV and ZIP)
+
+v3.1.20 (2025-08-20)
+- Fixed UnboundLocalError for uploaded_files variable scoping
+- Added proper variable initialization for all configuration options
+- Improved error handling for CSV upload mode
+
+v3.1.15 (2025-08-20)
+- Implemented optimization modes (Quick, Standard, Full)
+- Added HTF control settings (Essential vs All)
+- Ensured Quick mode tests all Pivot/ATR parameters
+- Added smart skipping for poor performing combinations
+- Added max bars slider for performance control
+
+v3.1.10 (2025-08-20)
+- Fixed pivot calculation errors with manual implementation
+- Enhanced error handling and data validation
+- Added fallback values for calculation failures
+- Improved NaN handling in indicators
+
+v3.1.5 (2025-08-20)
+- Added direct Yahoo Finance data download
+- Removed dependency on manual CSV uploads
+- Added support for crypto, forex, and commodities
+- Implemented dual data source option (Yahoo/CSV)
+
+v3.1.0 (2025-08-20)
+- Initial release matching TradingView XPST v3.1 implementation
+- Full backtest engine with exact signal logic
+- Complete parameter optimization
+- HTF (Higher Timeframe) analysis
+- Performance metrics and statistics table
+
+COMPATIBILITY:
+==============
+- TradingView XPST Indicator: v3.1
+- Python Requirements: 3.8+
+- Streamlit: 1.48.0+
+- Required Libraries: pandas, numpy, yfinance, streamlit
+
+USAGE:
+======
+streamlit run xpst_optimizer.py
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,6 +66,10 @@ import warnings
 import io
 import zipfile
 warnings.filterwarnings('ignore')
+
+# Version display in UI
+__version__ = "3.1.25"
+__last_updated__ = "2025-08-20"
 
 # Initialize session state
 if 'downloaded_data' not in st.session_state:
@@ -749,11 +812,12 @@ def main():
     )
     
     # Header
-    st.markdown("""
+    st.markdown(f"""
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
-        <h1 style="color: white; margin: 0;">🎯 XPST Optimizer v3.1</h1>
+        <h1 style="color: white; margin: 0;">🎯 XPST Optimizer v{__version__}</h1>
         <p style="color: #e8f4f8; margin: 5px 0 0 0;">TradingView Consistency Verified Edition</p>
+        <p style="color: #d0e8f0; margin: 3px 0 0 0; font-size: 0.9em;">Last Updated: {__last_updated__}</p>
     </div>
     """, unsafe_allow_html=True)
     
