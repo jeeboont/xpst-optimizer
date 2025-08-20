@@ -1,12 +1,19 @@
 """
 XPST Optimizer - TradingView Consistency Verified Edition
-Version: 3.1.32
+Version: 3.1.33
 Last Updated: 2025-08-20
 Author: XPST Trading Systems
 
 VERSION HISTORY:
 ================
-v3.1.32 (2025-08-20) - Current Version
+v3.1.33 (2025-08-20) - Current Version
+- Fixed pip calculation for crypto assets (BTC, ETH use dollar values)
+- Changed default for "Require MTF Agreement" to False (unchecked)
+- Added asset name parameter to backtest functions
+- Improved profit/loss calculation for different asset types
+- Better alignment with typical TradingView settings
+
+v3.1.32 (2025-08-20)
 - Fixed NameError: process_uploaded_csv function placement
 - Reorganized function definitions to ensure proper scope
 - Enhanced error handling with detailed traceback
@@ -88,7 +95,7 @@ import zipfile
 warnings.filterwarnings('ignore')
 
 # Version display in UI
-__version__ = "3.1.32"
+__version__ = "3.1.33"
 __last_updated__ = "2025-08-20"
 
 # Initialize session state
@@ -500,7 +507,14 @@ def run_backtest_with_trades(df, params, htf_multiplier=None):
                         exit_signal = exit_signal or htf_flip
                 
                 if exit_signal:
-                    profit_pips = (row['close'] - entry_price) / 0.0001  # Forex pips
+                    # Calculate profit based on asset type
+                    if 'BTC' in asset_name.upper() or 'ETH' in asset_name.upper():
+                        # For crypto, use points/dollars instead of pips
+                        profit_pips = row['close'] - entry_price  # Raw price difference
+                    else:
+                        # For forex, use standard pip calculation
+                        profit_pips = (row['close'] - entry_price) / 0.0001
+                    
                     signals.append({
                         'entry_time': entry_time,
                         'exit_time': i,
@@ -524,7 +538,14 @@ def run_backtest_with_trades(df, params, htf_multiplier=None):
                         exit_signal = exit_signal or htf_flip
                 
                 if exit_signal:
-                    profit_pips = (entry_price - row['close']) / 0.0001  # Forex pips
+                    # Calculate profit based on asset type
+                    if 'BTC' in asset_name.upper() or 'ETH' in asset_name.upper():
+                        # For crypto, use points/dollars instead of pips
+                        profit_pips = entry_price - row['close']  # Raw price difference
+                    else:
+                        # For forex, use standard pip calculation
+                        profit_pips = (entry_price - row['close']) / 0.0001
+                    
                     signals.append({
                         'entry_time': entry_time,
                         'exit_time': i,
@@ -784,10 +805,10 @@ def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, 
                             'adx_threshold': 25,
                             'use_ema': use_ema,
                             'ema_period': 200,
-                            'xtrend_grey_disagree': xtrend_grey
+                            'xtrend_grey_disagree': xtrend_grey  # Will now default to False
                         }
                         
-                        metrics = run_backtest(df, params, htf_mult)
+                        metrics = run_backtest(df, params, htf_mult, asset_name)
                         
                         # Skip if too few trades
                         if skip_low_volume and metrics['total_trades'] < 5:
@@ -978,8 +999,8 @@ def main():
         use_xtrend = st.sidebar.checkbox("Use X Trend Filter", value=True)
         use_adx = st.sidebar.checkbox("Use ADX Filter", value=False)
         use_ema = st.sidebar.checkbox("Use EMA Filter", value=False)
-        xtrend_grey = st.sidebar.checkbox("Require MTF Agreement", value=True, 
-                                         help="Grey/block when local and HTF disagree")
+        xtrend_grey = st.sidebar.checkbox("Require MTF Agreement", value=False, 
+                                         help="Grey/block when local and HTF disagree (usually OFF)")
     else:
         use_xtrend = False
         use_adx = False
