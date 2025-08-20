@@ -1,12 +1,18 @@
 """
 XPST Optimizer - TradingView Consistency Verified Edition
-Version: 3.1.31
+Version: 3.1.32
 Last Updated: 2025-08-20
 Author: XPST Trading Systems
 
 VERSION HISTORY:
 ================
-v3.1.31 (2025-08-20) - Current Version
+v3.1.32 (2025-08-20) - Current Version
+- Fixed NameError: process_uploaded_csv function placement
+- Reorganized function definitions to ensure proper scope
+- Enhanced error handling with detailed traceback
+- Confirmed CSV processing works with TradingView exports
+
+v3.1.31 (2025-08-20)
 - Fixed CSV upload to handle TradingView exported files
 - Added automatic column name normalization (handles Volume vs volume)
 - Enhanced CSV processing with better error messages
@@ -82,7 +88,7 @@ import zipfile
 warnings.filterwarnings('ignore')
 
 # Version display in UI
-__version__ = "3.1.31"
+__version__ = "3.1.32"
 __last_updated__ = "2025-08-20"
 
 # Initialize session state
@@ -641,6 +647,50 @@ def download_data_custom_range(symbol, start_date, end_date, interval='5m'):
         
     except Exception as e:
         st.error(f"Error downloading {symbol}: {e}")
+        return None
+
+def process_uploaded_csv(df, filename):
+    """Process uploaded CSV file to match expected format"""
+    try:
+        df = df.copy()
+        
+        # Ensure column names are lowercase
+        df.columns = [col.lower() for col in df.columns]
+        
+        # Check for required columns
+        required = ['time', 'open', 'high', 'low', 'close', 'volume']
+        if not all(col in df.columns for col in required):
+            # Try to find close matches
+            missing = [col for col in required if col not in df.columns]
+            st.error(f"CSV must have columns: {required}")
+            st.error(f"Missing: {missing}")
+            st.error(f"Found columns: {list(df.columns)}")
+            return None
+        
+        # Ensure numeric types for price columns
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Ensure time is integer
+        df['time'] = pd.to_numeric(df['time'], errors='coerce').astype('int64')
+        
+        # Remove any rows with NaN values
+        df = df.dropna()
+        
+        # Limit to 1000 rows for performance (optional)
+        if len(df) > 1000:
+            df = df.tail(1000)
+            st.info(f"Using last 1000 bars from {filename}")
+        
+        st.success(f"Successfully processed {filename}: {len(df)} valid bars")
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"Error processing CSV: {e}")
+        import traceback
+        st.error(f"Details: {traceback.format_exc()}")
         return None
 
 def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, xtrend_grey, 
