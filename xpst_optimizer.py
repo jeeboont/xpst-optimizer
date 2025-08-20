@@ -484,8 +484,8 @@ def process_uploaded_csv(df, filename):
         st.error(f"Error processing CSV: {e}")
         return None
 
-def run_optimization(df, asset_name):
-    """Run complete optimization for an asset"""
+def run_optimization_with_filters(df, asset_name, use_xtrend, use_adx, use_ema, xtrend_grey):
+    """Run optimization with specified filter settings"""
     try:
         results = []
         
@@ -515,12 +515,12 @@ def run_optimization(df, asset_name):
                             'pivot_period': pivot_period,
                             'atr_factor': atr_factor,
                             'atr_period': atr_period,
-                            'use_xtrend': True,
-                            'use_adx': False,
+                            'use_xtrend': use_xtrend,
+                            'use_adx': use_adx,
                             'adx_threshold': 25,
-                            'use_ema': False,
+                            'use_ema': use_ema,
                             'ema_period': 200,
-                            'xtrend_grey_disagree': True
+                            'xtrend_grey_disagree': xtrend_grey
                         }
                         
                         metrics = run_backtest(df, params, htf_mult)
@@ -545,6 +545,8 @@ def run_optimization(df, asset_name):
                             'win_rate': round(metrics['win_rate'], 2),
                             'total_pips': round(metrics['total_pips'], 2),
                             'profit_factor': round(metrics['profit_factor'], 2),
+                            'avg_win': round(metrics['avg_win'], 2),
+                            'avg_loss': round(metrics['avg_loss'], 2),
                             'score': round(score, 2)
                         })
         
@@ -560,6 +562,10 @@ def run_optimization(df, asset_name):
     except Exception as e:
         st.error(f"Optimization error: {e}")
         return pd.DataFrame()
+
+def run_optimization(df, asset_name):
+    """Run complete optimization for an asset (wrapper for backward compatibility)"""
+    return run_optimization_with_filters(df, asset_name, True, False, False, True)
 
 def get_htf_name(multiplier):
     """Convert HTF multiplier to readable timeframe name"""
@@ -614,6 +620,12 @@ def main():
         options=["Yahoo Finance", "Upload CSV"],
         index=0
     )
+    
+    # Initialize variables
+    selected_assets = []
+    timeframe = '5m'
+    period = '7d'
+    uploaded_files = None
     
     if data_source == "Yahoo Finance":
         # Asset selection
@@ -674,100 +686,182 @@ def main():
         xtrend_grey = False
     
     # Main content area
-    col1, col2 = st.columns([1, 2])
+    st.markdown("### 📊 Data Management")
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
     
     with col1:
-        st.subheader("🔄 Data Download")
-        
-        if st.button("📥 Download Data", type="primary"):
-            for asset in selected_assets:
-                with st.spinner(f"Downloading {asset}..."):
-                    data = download_data(
-                        assets[asset]['yf'],
-                        period=period,
-                        interval=timeframe
-                    )
-                    if data is not None:
-                        st.session_state.downloaded_data[asset] = data
-                        st.success(f"✅ {asset}: {len(data)} bars downloaded")
-        
-        # Handle uploaded files
-        if uploaded_files:
-            for file in uploaded_files:
-                df = pd.read_csv(file)
-                asset_name = file.name.split('_')[0]
-                st.session_state.downloaded_data[asset_name] = df
-                st.success(f"✅ Uploaded {asset_name}: {len(df)} bars")
+        if data_source == "Yahoo Finance":
+            if st.button("📥 Download All Data", type="primary", use_container_width=True):
+                st.session_state.downloaded_data.clear()
+                
+                for asset in selected_assets:
+                    with st.spinner(f"Downloading {asset}..."):
+                        data = download_data(
+                            assets[asset]['yf'],
+                            period=period,
+                            interval=timeframe
+                        )
+                        if data is not None:
+                            st.session_state.downloaded_data[asset] = data
+                            st.success(f"✅ {asset}: {len(data)} bars")
+        else:
+            if uploaded_files:
+                if st.button("📤 Process CSV Files", type="primary", use_container_width=True):
+                    st.session_state.downloaded_data.clear()
+                    
+                    for file in uploaded_files:
+                        df = pd.read_csv(file)
+                        processed = process_uploaded_csv(df, file.name)
+                        if processed is not None:
+                            # Extract asset name from filename
+                            asset_name = file.name.replace('.csv', '').split('_')[0].upper()
+                            st.session_state.downloaded_data[asset_name] = processed
+                            st.success(f"✅ {asset_name}: {len(processed)} bars")
+            else:
+                st.info("👆 Please upload CSV files to proceed")
     
     with col2:
-        st.subheader("⚡ Optimization")
-        
         if st.session_state.downloaded_data:
-            st.write("**Available Data:**")
-            for asset, data in st.session_state.downloaded_data.items():
-                st.write(f"• {asset}: {len(data)} bars")
-            
-            if st.button("🚀 Run Optimization", type="primary"):
+            if st.button("🚀 Run Optimization", type="primary", use_container_width=True):
+                st.session_state.optimization_results.clear()
+                
                 for asset, data in st.session_state.downloaded_data.items():
-                    st.write(f"\n**Optimizing {asset}...**")
-                    results = run_optimization(data, asset)
-                    
-                    if not results.empty:
-                        st.session_state.optimization_results[asset] = results
+                    with st.container():
+                        st.write(f"**Optimizing {asset}...**")
                         
-                        # Display top 5 results
-                        st.write("**Top 5 Configurations:**")
-                        display_cols = ['pivot_period', 'atr_factor', 'atr_period', 
-                                      'htf_timeframe', 'win_rate', 'total_pips', 
-                                      'profit_factor', 'score']
-                        st.dataframe(results[display_cols].head(5))
+                        # Pass filter settings to optimization
+                        results = run_optimization_with_filters(
+                            data, asset, use_xtrend, use_adx, use_ema, xtrend_grey
+                        )
                         
-                        # Best configuration
-                        best = results.iloc[0]
-                        st.success(f"""
-                        **🏆 Best Configuration for {asset}:**
-                        - Pivot Period: {best['pivot_period']}
-                        - ATR Factor: {best['atr_factor']}
-                        - ATR Period: {best['atr_period']}
-                        - HTF: {best['htf_timeframe']}
-                        - Win Rate: {best['win_rate']}%
-                        - Total Pips: {best['total_pips']}
-                        - Score: {best['score']}
-                        """)
+                        if not results.empty:
+                            st.session_state.optimization_results[asset] = results
+                            
+                            # Show brief summary
+                            best = results.iloc[0]
+                            st.success(f"Best: Win Rate {best['win_rate']}%, {best['total_pips']:.1f} pips")
+    
+    with col3:
+        if st.session_state.optimization_results:
+            if st.button("📊 Clear Results", type="secondary", use_container_width=True):
+                st.session_state.optimization_results.clear()
+                st.session_state.downloaded_data.clear()
+                st.rerun()
+    
+    # Display current data status
+    if st.session_state.downloaded_data:
+        st.markdown("---")
+        st.markdown("### 📈 Downloaded Data")
+        
+        data_cols = st.columns(len(st.session_state.downloaded_data))
+        for idx, (asset, data) in enumerate(st.session_state.downloaded_data.items()):
+            with data_cols[idx]:
+                st.metric(
+                    label=asset,
+                    value=f"{len(data)} bars",
+                    delta=f"{data['time'].iloc[-1] - data['time'].iloc[0]} seconds"
+                )
     
     # Results section
     if st.session_state.optimization_results:
         st.markdown("---")
-        st.subheader("📈 Detailed Results")
+        st.markdown("### 🏆 Optimization Results")
         
+        # Summary table
+        summary_data = []
+        for asset, results in st.session_state.optimization_results.items():
+            best = results.iloc[0]
+            summary_data.append({
+                'Asset': asset,
+                'Best Win Rate': f"{best['win_rate']}%",
+                'Total Pips': f"{best['total_pips']:.1f}",
+                'Profit Factor': f"{best['profit_factor']:.2f}",
+                'HTF': best['htf_timeframe'],
+                'Score': f"{best['score']:.1f}"
+            })
+        
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True)
+        
+        # Detailed tabs
         tabs = st.tabs(list(st.session_state.optimization_results.keys()))
         
         for tab, asset in zip(tabs, st.session_state.optimization_results.keys()):
             with tab:
                 results = st.session_state.optimization_results[asset]
                 
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    # Top configurations
+                    st.write("**🥇 Top 10 Configurations:**")
+                    display_cols = ['pivot_period', 'atr_factor', 'atr_period', 
+                                  'htf_timeframe', 'total_trades', 'win_rate', 
+                                  'total_pips', 'profit_factor', 'score']
+                    st.dataframe(
+                        results[display_cols].head(10),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                
+                with col2:
+                    # Best configuration details
+                    best = results.iloc[0]
+                    st.write("**📍 Optimal Settings:**")
+                    st.code(f"""
+// XPST v3.1 Settings for {asset}
+Pivot Period: {best['pivot_period']}
+ATR Factor: {best['atr_factor']}
+ATR Period: {best['atr_period']}
+HTF Multiplier: {best['htf_multiplier']}x
+
+// Performance
+Win Rate: {best['win_rate']}%
+Total Trades: {best['total_trades']}
+Total Pips: {best['total_pips']:.1f}
+Profit Factor: {best['profit_factor']:.2f}
+                    """)
+                
                 # HTF Analysis
-                st.write("**HTF Performance Analysis:**")
+                st.write("**📊 HTF Performance Analysis:**")
                 htf_summary = results.groupby('htf_timeframe').agg({
                     'score': 'mean',
                     'win_rate': 'mean',
                     'total_pips': 'mean',
-                    'profit_factor': 'mean'
-                }).round(2)
-                st.dataframe(htf_summary)
+                    'total_trades': 'mean'
+                }).round(2).sort_values('score', ascending=False)
                 
-                # Full results
-                st.write("**All Results (Top 20):**")
-                st.dataframe(results.head(20))
+                st.dataframe(htf_summary, use_container_width=True)
                 
                 # Download button
                 csv = results.to_csv(index=False)
                 st.download_button(
-                    label=f"📥 Download {asset} Results",
+                    label=f"📥 Download {asset} Results CSV",
                     data=csv,
-                    file_name=f"xpst_optimization_{asset}.csv",
+                    file_name=f"xpst_optimization_{asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv"
                 )
+    
+    else:
+        if not st.session_state.downloaded_data:
+            st.info("👈 Select assets and download data to begin optimization")
+        else:
+            st.info("✨ Data ready! Click 'Run Optimization' to find the best XPST settings")
+    
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style="text-align: center; color: #666;">
+            <small>
+            XPST Optimizer v3.1 | Matches TradingView Implementation<br>
+            Data provided by Yahoo Finance | Optimized for XPST v3.1 Pine Script
+            </small>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
     main()
