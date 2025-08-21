@@ -9,6 +9,41 @@ import os
 import requests
 import json
 
+# App Version Control
+APP_VERSION = "2.1.0"
+VERSION_DATE = "2025-08-21"
+CHANGELOG = {
+    "2.1.0": {
+        "date": "2025-08-21",
+        "changes": [
+            "Added version control and changelog",
+            "Fixed Yahoo Finance timeframe/period compatibility issues",
+            "Improved real-time search with autocomplete",
+            "Added popular stocks database for instant suggestions",
+            "Enhanced UI with better visual feedback"
+        ]
+    },
+    "2.0.0": {
+        "date": "2025-08-21", 
+        "changes": [
+            "Complete UI redesign with left sidebar",
+            "Added real-time ticker search functionality",
+            "Implemented smart timeframe/period validation",
+            "Added data preview feature",
+            "Enhanced error handling and user feedback"
+        ]
+    },
+    "1.0.0": {
+        "date": "2025-08-21",
+        "changes": [
+            "Initial release",
+            "Basic asset selection and data download",
+            "ZIP file export functionality",
+            "Support for stocks, crypto, forex, and commodities"
+        ]
+    }
+}
+
 # Set page config
 st.set_page_config(
     page_title="YFinance Data Downloader", 
@@ -148,6 +183,26 @@ def get_instant_suggestions(query):
     .stSelectbox > div > div > select {
         background-color: white;
     }
+    .version-info {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        border-left: 4px solid #3498db;
+        margin: 10px 0;
+        font-size: 0.9rem;
+    }
+    .changelog-item {
+        background-color: #fff;
+        padding: 8px;
+        margin: 5px 0;
+        border-radius: 4px;
+        border-left: 3px solid #27ae60;
+    }
+    .version-header {
+        color: #2c3e50;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -177,9 +232,9 @@ predefined_assets = {
 
 # Timeframe and period compatibility mapping
 timeframe_periods = {
-    '1m': ['1d', '5d', '7d'],
+    '1m': ['1d', '5d', '7d'],  # Yahoo Finance limits 1m data to max 7 days
     '2m': ['1d', '5d', '7d'], 
-    '5m': ['1d', '5d', '7d'],
+    '5m': ['1d', '5d', '7d'],  # Short timeframes limited to 7 days max
     '15m': ['1d', '5d', '7d'],
     '30m': ['1d', '5d', '7d'],
     '60m': ['1d', '5d', '7d'],
@@ -436,10 +491,10 @@ with col1:
 
 with col2:
     # Main content area
-    st.markdown("""
+    st.markdown(f"""
     <div class="main-header">
         <h1>📊 YFinance Data Downloader</h1>
-        <p>Interactive Trading Data Downloader</p>
+        <p>Interactive Trading Data Downloader - v{APP_VERSION}</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -537,11 +592,21 @@ with col2:
     else:
         st.info("👈 Please select at least one asset from the sidebar to get started.")
         
+        # Version Info Section
+        st.markdown("### ℹ️ App Information")
+        st.markdown(f"""
+        <div class="version-info">
+            <strong>📊 YFinance Data Downloader v{APP_VERSION}</strong><br>
+            Released: {VERSION_DATE}<br>
+            Status: ✅ Active & Updated
+        </div>
+        """, unsafe_allow_html=True)
+        
         # Instructions
         st.markdown("### 📋 How to Use")
         st.markdown("""
-        1. **Select Assets**: Choose from predefined options or add custom ticker symbols
-        2. **Configure Timeframe**: Select data interval and period (combinations are automatically validated)
+        1. **Select Assets**: Choose from predefined options or search by company name
+        2. **Configure Timeframe**: Select data interval and period (auto-validated)
         3. **Download**: Get a ZIP file with CSV data for all selected assets
         
         **Enhanced Search Features:**
@@ -557,6 +622,54 @@ with col2:
         - Type exact symbols like "MSFT" for direct match
         """)
 
+# Version Control and Changelog Section (in sidebar)
+with col1:
+    st.markdown("---")
+    
+    # Version display in sidebar
+    st.markdown(f"""
+    <div style="text-align: center; padding: 10px; background-color: #ecf0f1; border-radius: 5px;">
+        <small><strong>v{APP_VERSION}</strong> • {VERSION_DATE}</small>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Changelog expander
+    with st.expander("📋 Version History & Changelog"):
+        st.markdown("### Recent Updates")
+        
+        for version, info in list(CHANGELOG.items())[:3]:  # Show last 3 versions
+            st.markdown(f"""
+            <div class="changelog-item">
+                <div class="version-header">v{version} - {info['date']}</div>
+                {"<br>".join([f"• {change}" for change in info['changes']])}
+            </div>
+            """, unsafe_allow_html=True)
+        
+        if len(CHANGELOG) > 3:
+            st.markdown(f"*...and {len(CHANGELOG) - 3} more versions*")
+        
+        # Technical Info
+        st.markdown("### 🛠️ Technical Details")
+        st.markdown(f"""
+        - **Framework**: Streamlit {st.__version__}
+        - **Data Source**: Yahoo Finance (yfinance)
+        - **Python Version**: 3.13+
+        - **Last Updated**: {VERSION_DATE}
+        - **Dependencies**: pandas, yfinance, zipfile
+        """)
+
+# Main content continuation
+with col2:
+
 # Footer
 st.markdown("---")
-st.markdown("*YFinance Data Downloader - Perfect for TradingView Pine Script developers. Data provided by Yahoo Finance.*")
+col_footer1, col_footer2, col_footer3 = st.columns([2, 1, 1])
+
+with col_footer1:
+    st.markdown(f"*YFinance Data Downloader v{APP_VERSION} - Perfect for TradingView Pine Script developers.*")
+
+with col_footer2:
+    st.markdown("*Data: Yahoo Finance*")
+
+with col_footer3:
+    st.markdown(f"*Updated: {VERSION_DATE}*")
