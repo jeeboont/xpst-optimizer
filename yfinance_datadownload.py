@@ -22,6 +22,83 @@ st.markdown("""
     .main-content {
         margin-left: 0px;
     }
+
+# Popular stocks database for instant suggestions
+POPULAR_STOCKS = {
+    # Technology
+    'apple': {'symbol': 'AAPL', 'name': 'Apple Inc.', 'sector': 'Technology'},
+    'microsoft': {'symbol': 'MSFT', 'name': 'Microsoft Corporation', 'sector': 'Technology'},
+    'google': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology'},
+    'alphabet': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology'},
+    'tesla': {'symbol': 'TSLA', 'name': 'Tesla, Inc.', 'sector': 'Automotive'},
+    'amazon': {'symbol': 'AMZN', 'name': 'Amazon.com, Inc.', 'sector': 'E-commerce'},
+    'meta': {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology'},
+    'facebook': {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology'},
+    'nvidia': {'symbol': 'NVDA', 'name': 'NVIDIA Corporation', 'sector': 'Technology'},
+    'netflix': {'symbol': 'NFLX', 'name': 'Netflix, Inc.', 'sector': 'Media'},
+    'uber': {'symbol': 'UBER', 'name': 'Uber Technologies, Inc.', 'sector': 'Transportation'},
+    'zoom': {'symbol': 'ZM', 'name': 'Zoom Video Communications', 'sector': 'Technology'},
+    'spotify': {'symbol': 'SPOT', 'name': 'Spotify Technology S.A.', 'sector': 'Media'},
+    'adobe': {'symbol': 'ADBE', 'name': 'Adobe Inc.', 'sector': 'Technology'},
+    'salesforce': {'symbol': 'CRM', 'name': 'Salesforce, Inc.', 'sector': 'Technology'},
+    
+    # Finance
+    'berkshire': {'symbol': 'BRK-B', 'name': 'Berkshire Hathaway Inc.', 'sector': 'Financial'},
+    'jpmorgan': {'symbol': 'JPM', 'name': 'JPMorgan Chase & Co.', 'sector': 'Financial'},
+    'visa': {'symbol': 'V', 'name': 'Visa Inc.', 'sector': 'Financial'},
+    'mastercard': {'symbol': 'MA', 'name': 'Mastercard Incorporated', 'sector': 'Financial'},
+    'paypal': {'symbol': 'PYPL', 'name': 'PayPal Holdings, Inc.', 'sector': 'Financial'},
+    
+    # Healthcare
+    'johnson': {'symbol': 'JNJ', 'name': 'Johnson & Johnson', 'sector': 'Healthcare'},
+    'pfizer': {'symbol': 'PFE', 'name': 'Pfizer Inc.', 'sector': 'Healthcare'},
+    'moderna': {'symbol': 'MRNA', 'name': 'Moderna, Inc.', 'sector': 'Healthcare'},
+    
+    # Consumer
+    'coca': {'symbol': 'KO', 'name': 'The Coca-Cola Company', 'sector': 'Consumer'},
+    'pepsi': {'symbol': 'PEP', 'name': 'PepsiCo, Inc.', 'sector': 'Consumer'},
+    'walmart': {'symbol': 'WMT', 'name': 'Walmart Inc.', 'sector': 'Retail'},
+    'disney': {'symbol': 'DIS', 'name': 'The Walt Disney Company', 'sector': 'Media'},
+    'nike': {'symbol': 'NKE', 'name': 'NIKE, Inc.', 'sector': 'Consumer'},
+    'starbucks': {'symbol': 'SBUX', 'name': 'Starbucks Corporation', 'sector': 'Consumer'},
+    
+    # ETFs and Indices
+    'spy': {'symbol': 'SPY', 'name': 'SPDR S&P 500 ETF Trust', 'sector': 'ETF'},
+    'qqq': {'symbol': 'QQQ', 'name': 'Invesco QQQ Trust', 'sector': 'ETF'},
+    'vti': {'symbol': 'VTI', 'name': 'Vanguard Total Stock Market ETF', 'sector': 'ETF'},
+    
+    # Crypto-related
+    'bitcoin': {'symbol': 'BTC-USD', 'name': 'Bitcoin USD', 'sector': 'Cryptocurrency'},
+    'ethereum': {'symbol': 'ETH-USD', 'name': 'Ethereum USD', 'sector': 'Cryptocurrency'},
+    'coinbase': {'symbol': 'COIN', 'name': 'Coinbase Global, Inc.', 'sector': 'Cryptocurrency'},
+}
+
+def get_instant_suggestions(query):
+    """Get instant suggestions from popular stocks database"""
+    if not query or len(query) < 2:
+        return []
+    
+    query_lower = query.lower()
+    suggestions = []
+    
+    # Search in popular stocks
+    for key, stock in POPULAR_STOCKS.items():
+        if (query_lower in key or 
+            query_lower in stock['symbol'].lower() or 
+            query_lower in stock['name'].lower()):
+            suggestions.append(stock)
+    
+    # Remove duplicates and limit results
+    seen = set()
+    unique_suggestions = []
+    for suggestion in suggestions:
+        if suggestion['symbol'] not in seen:
+            seen.add(suggestion['symbol'])
+            unique_suggestions.append(suggestion)
+            if len(unique_suggestions) >= 5:
+                break
+    
+    return unique_suggestions
     .sidebar {
         background-color: #f0f2f6;
         padding: 20px;
@@ -81,6 +158,8 @@ if 'search_results' not in st.session_state:
     st.session_state.search_results = []
 if 'show_search_results' not in st.session_state:
     st.session_state.show_search_results = False
+if 'last_search_query' not in st.session_state:
+    st.session_state.last_search_query = ""
 
 # Predefined assets with their yfinance symbols and descriptions
 predefined_assets = {
@@ -233,7 +312,7 @@ with col1:
     st.markdown("**Add Custom Ticker:**")
     st.markdown("Enter Symbol or Company Name")
     
-    # Search input
+    # Search input with real-time suggestions
     search_query = st.text_input(
         "search_ticker",
         placeholder="e.g., Apple, AAPL, Tesla...",
@@ -241,39 +320,93 @@ with col1:
         key="search_input"
     )
     
+    # Auto-suggest as user types
+    if search_query and search_query != st.session_state.last_search_query:
+        st.session_state.last_search_query = search_query
+        if len(search_query) >= 2:
+            # Get instant suggestions
+            instant_suggestions = get_instant_suggestions(search_query)
+            if instant_suggestions:
+                st.session_state.search_results = instant_suggestions
+                st.session_state.show_search_results = True
+            else:
+                # If no instant suggestions, try live search
+                st.session_state.search_results = search_ticker(search_query)
+                st.session_state.show_search_results = True
+        else:
+            st.session_state.show_search_results = False
+    
     # Search and Add buttons
     col_search, col_add = st.columns([2, 1])
     with col_search:
-        if st.button("🔍 Search", use_container_width=True, disabled=not search_query):
+        if st.button("🔍 Search More", use_container_width=True, disabled=not search_query):
+            # Detailed search using yfinance
             st.session_state.search_results = search_ticker(search_query)
             st.session_state.show_search_results = True
     
     with col_add:
-        if st.button("➕ Add", help="Add as exact symbol", disabled=not search_query):
+        if st.button("➕ Add Direct", help="Add as exact symbol", disabled=not search_query):
             if search_query.upper() not in st.session_state.selected_assets:
                 st.session_state.selected_assets.append(search_query.upper())
                 st.session_state.show_search_results = False
+                # Clear search
+                st.session_state.last_search_query = ""
                 st.rerun()
     
-    # Display search results
+    # Display search results with improved styling
     if st.session_state.show_search_results and st.session_state.search_results:
-        st.markdown("**Search Results:**")
-        for result in st.session_state.search_results:
-            col_info, col_select = st.columns([4, 1])
-            with col_info:
-                st.markdown(f"""
-                **{result['symbol']}** - {result['name']}  
-                *{result.get('sector', 'N/A')} | {result.get('exchange', 'N/A')}*
-                """)
-            with col_select:
-                if st.button("✅", key=f"select_{result['symbol']}", help="Add this ticker"):
-                    if result['symbol'] not in st.session_state.selected_assets:
-                        st.session_state.selected_assets.append(result['symbol'])
-                        st.session_state.show_search_results = False
-                        st.rerun()
+        st.markdown("**💡 Suggestions:**")
+        
+        # Create a container for better styling
+        with st.container():
+            for i, result in enumerate(st.session_state.search_results):
+                # Create a card-like appearance for each suggestion
+                col_info, col_select = st.columns([5, 1])
+                
+                with col_info:
+                    # Check if already selected
+                    is_selected = result['symbol'] in st.session_state.selected_assets
+                    status_icon = "✅" if is_selected else "📈"
+                    
+                    st.markdown(f"""
+                    <div style="background-color: {'#e8f5e8' if is_selected else '#f8f9fa'}; 
+                                padding: 8px; border-radius: 5px; margin: 2px 0;">
+                        <strong style="color: #2c3e50;">{status_icon} {result['symbol']}</strong> - {result['name']}<br>
+                        <small style="color: #7f8c8d;"><em>{result.get('sector', 'N/A')}</em></small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_select:
+                    if not is_selected:
+                        if st.button("✅", key=f"select_{result['symbol']}_{i}", help="Add this ticker"):
+                            st.session_state.selected_assets.append(result['symbol'])
+                            st.session_state.show_search_results = False
+                            st.session_state.last_search_query = ""
+                            st.rerun()
+                    else:
+                        st.markdown("*Added*")
     
-    elif st.session_state.show_search_results and not st.session_state.search_results:
-        st.info("No results found. Try searching with a different term or add the symbol directly.")
+    elif st.session_state.show_search_results and not st.session_state.search_results and search_query:
+        st.info("💭 No suggestions found. Try a different term or use 'Add Direct' to add the symbol as-is.")
+    
+    # Quick suggestions when no search query
+    if not search_query:
+        st.markdown("**🔥 Popular Picks:**")
+        popular_quick = [
+            {'symbol': 'AAPL', 'name': 'Apple Inc.'},
+            {'symbol': 'TSLA', 'name': 'Tesla, Inc.'},
+            {'symbol': 'NVDA', 'name': 'NVIDIA Corp.'},
+            {'symbol': 'SPY', 'name': 'S&P 500 ETF'}
+        ]
+        
+        cols = st.columns(2)
+        for i, stock in enumerate(popular_quick):
+            with cols[i % 2]:
+                if stock['symbol'] not in st.session_state.selected_assets:
+                    if st.button(f"📈 {stock['symbol']}", key=f"quick_{stock['symbol']}", 
+                               help=stock['name'], use_container_width=True):
+                        st.session_state.selected_assets.append(stock['symbol'])
+                        st.rerun()
     
     st.markdown("---")
     
@@ -411,13 +544,17 @@ with col2:
         2. **Configure Timeframe**: Select data interval and period (combinations are automatically validated)
         3. **Download**: Get a ZIP file with CSV data for all selected assets
         
-        **Supported Search Terms:**
-        - **Company Names**: Apple, Microsoft, Tesla, Amazon, etc.
-        - **Ticker Symbols**: AAPL, MSFT, TSLA, AMZN, etc.
-        - **Crypto**: Bitcoin (BTC-USD), Ethereum (ETH-USD)
-        - **Forex**: Euro USD, GBP USD, etc.
+        **Enhanced Search Features:**
+        - **Real-time suggestions** as you type (2+ characters)
+        - **Popular companies** database with instant results
+        - **Smart matching** by company name, ticker, or sector
+        - **Visual indicators** show already selected stocks
         
-        **Tip**: Use the search function in the sidebar to find ticker symbols by company name!
+        **Search Examples:**
+        - Type "apple" → Get AAPL instantly
+        - Type "tech" → See technology stocks
+        - Type "etf" → Find popular ETFs
+        - Type exact symbols like "MSFT" for direct match
         """)
 
 # Footer
