@@ -491,12 +491,8 @@ with col1:
 
 with col2:
     # Main content area
-    st.markdown(f"""
-    <div class="main-header">
-        <h1>📊 YFinance Data Downloader</h1>
-        <p>Interactive Trading Data Downloader - v{APP_VERSION}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    header_html = f'<div class="main-header"><h1>📊 YFinance Data Downloader</h1><p>Interactive Trading Data Downloader - v{APP_VERSION}</p></div>'
+    st.markdown(header_html, unsafe_allow_html=True)
     
     # Selected assets summary
     if st.session_state.selected_assets:
@@ -594,69 +590,54 @@ with col2:
         
         # Version Info Section
         st.markdown("### ℹ️ App Information")
-        st.markdown(f"""
-        <div class="version-info">
-            <strong>📊 YFinance Data Downloader v{APP_VERSION}</strong><br>
-            Released: {VERSION_DATE}<br>
-            Status: ✅ Active & Updated
-        </div>
-        """, unsafe_allow_html=True)
+        version_html = f'<div class="version-info"><strong>📊 YFinance Data Downloader v{APP_VERSION}</strong><br>Released: {VERSION_DATE}<br>Status: ✅ Active & Updated</div>'
+        st.markdown(version_html, unsafe_allow_html=True)
         
         # Instructions
         st.markdown("### 📋 How to Use")
-        st.markdown("""
-        1. **Select Assets**: Choose from predefined options or search by company name
-        2. **Configure Timeframe**: Select data interval and period (auto-validated)
-        3. **Download**: Get a ZIP file with CSV data for all selected assets
-        
-        **Enhanced Search Features:**
-        - **Real-time suggestions** as you type (2+ characters)
-        - **Popular companies** database with instant results
-        - **Smart matching** by company name, ticker, or sector
-        - **Visual indicators** show already selected stocks
-        
-        **Search Examples:**
-        - Type "apple" → Get AAPL instantly
-        - Type "tech" → See technology stocks
-        - Type "etf" → Find popular ETFs
-        - Type exact symbols like "MSFT" for direct match
-        """)
+        instructions_text = "1. **Select Assets**: Choose from predefined options or search by company name\n\n"
+        instructions_text += "2. **Configure Timeframe**: Select data interval and period (auto-validated)\n\n"
+        instructions_text += "3. **Download**: Get a ZIP file with CSV data for all selected assets\n\n"
+        instructions_text += "**Enhanced Search Features:**\n"
+        instructions_text += "- **Real-time suggestions** as you type (2+ characters)\n"
+        instructions_text += "- **Popular companies** database with instant results\n"
+        instructions_text += "- **Smart matching** by company name, ticker, or sector\n"
+        instructions_text += "- **Visual indicators** show already selected stocks\n\n"
+        instructions_text += "**Search Examples:**\n"
+        instructions_text += "- Type \"apple\" → Get AAPL instantly\n"
+        instructions_text += "- Type \"tech\" → See technology stocks\n"
+        instructions_text += "- Type \"etf\" → Find popular ETFs\n"
+        instructions_text += "- Type exact symbols like \"MSFT\" for direct match"
+        st.markdown(instructions_text)
 
 # Version Control and Changelog Section (in sidebar)
 with col1:
     st.markdown("---")
     
     # Version display in sidebar
-    st.markdown(f"""
-    <div style="text-align: center; padding: 10px; background-color: #ecf0f1; border-radius: 5px;">
-        <small><strong>v{APP_VERSION}</strong> • {VERSION_DATE}</small>
-    </div>
-    """, unsafe_allow_html=True)
+    sidebar_version = f'<div style="text-align: center; padding: 10px; background-color: #ecf0f1; border-radius: 5px;"><small><strong>v{APP_VERSION}</strong> • {VERSION_DATE}</small></div>'
+    st.markdown(sidebar_version, unsafe_allow_html=True)
     
     # Changelog expander
     with st.expander("📋 Version History & Changelog"):
         st.markdown("### Recent Updates")
         
         for version, info in list(CHANGELOG.items())[:3]:  # Show last 3 versions
-            st.markdown(f"""
-            <div class="changelog-item">
-                <div class="version-header">v{version} - {info['date']}</div>
-                {"<br>".join([f"• {change}" for change in info['changes']])}
-            </div>
-            """, unsafe_allow_html=True)
+            changes_text = "<br>".join([f"• {change}" for change in info['changes']])
+            changelog_html = f'<div class="changelog-item"><div class="version-header">v{version} - {info["date"]}</div>{changes_text}</div>'
+            st.markdown(changelog_html, unsafe_allow_html=True)
         
         if len(CHANGELOG) > 3:
             st.markdown(f"*...and {len(CHANGELOG) - 3} more versions*")
         
         # Technical Info
         st.markdown("### 🛠️ Technical Details")
-        st.markdown(f"""
-        - **Framework**: Streamlit {st.__version__}
-        - **Data Source**: Yahoo Finance (yfinance)
-        - **Python Version**: 3.13+
-        - **Last Updated**: {VERSION_DATE}
-        - **Dependencies**: pandas, yfinance, zipfile
-        """)
+        tech_details = f"- **Framework**: Streamlit {st.__version__}\n"
+        tech_details += "- **Data Source**: Yahoo Finance (yfinance)\n"
+        tech_details += "- **Python Version**: 3.13+\n"
+        tech_details += f"- **Last Updated**: {VERSION_DATE}\n"
+        tech_details += "- **Dependencies**: pandas, yfinance, zipfile"
+        st.markdown(tech_details)
 
 # Main content continuation
 with col2:
