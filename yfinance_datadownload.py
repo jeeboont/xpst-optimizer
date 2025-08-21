@@ -6,6 +6,8 @@ import io
 import base64
 from datetime import datetime, timedelta
 import os
+import requests
+import json
 
 # Set page config
 st.set_page_config(
@@ -75,6 +77,10 @@ st.markdown("""
 # Initialize session state
 if 'selected_assets' not in st.session_state:
     st.session_state.selected_assets = []
+if 'search_results' not in st.session_state:
+    st.session_state.search_results = []
+if 'show_search_results' not in st.session_state:
+    st.session_state.show_search_results = False
 
 # Predefined assets with their yfinance symbols and descriptions
 predefined_assets = {
@@ -106,6 +112,75 @@ timeframe_periods = {
     '1mo': ['1y', '2y', '5y', '10y', 'ytd', 'max'],
     '3mo': ['2y', '5y', '10y', 'ytd', 'max']
 }
+
+# Function to search for tickers
+def search_ticker(query):
+    """Search for ticker symbols using yfinance"""
+    if not query or len(query) < 2:
+        return []
+    
+    try:
+        # Use yfinance's Ticker search functionality
+        # This is a simple approach - in practice, you might want to use a more comprehensive search
+        search_results = []
+        
+        # Common stock exchanges and suffixes to try
+        variations = [
+            query.upper(),
+            f"{query.upper()}.TO",  # Toronto
+            f"{query.upper()}.L",   # London
+            f"{query.upper()}.T",   # Tokyo
+            f"{query.upper()}.HK",  # Hong Kong
+        ]
+        
+        for variation in variations[:3]:  # Limit to first 3 variations
+            try:
+                ticker = yf.Ticker(variation)
+                info = ticker.info
+                
+                if info and 'longName' in info and info['longName']:
+                    search_results.append({
+                        'symbol': variation,
+                        'name': info.get('longName', ''),
+                        'sector': info.get('sector', ''),
+                        'exchange': info.get('exchange', '')
+                    })
+                    if len(search_results) >= 5:  # Limit results
+                        break
+            except:
+                continue
+        
+        # Also try some popular ticker patterns
+        if query.upper() in ['APPLE', 'AAPL']:
+            search_results.insert(0, {'symbol': 'AAPL', 'name': 'Apple Inc.', 'sector': 'Technology', 'exchange': 'NASDAQ'})
+        elif query.upper() in ['MICROSOFT', 'MSFT']:
+            search_results.insert(0, {'symbol': 'MSFT', 'name': 'Microsoft Corporation', 'sector': 'Technology', 'exchange': 'NASDAQ'})
+        elif query.upper() in ['TESLA', 'TSLA']:
+            search_results.insert(0, {'symbol': 'TSLA', 'name': 'Tesla, Inc.', 'sector': 'Consumer Cyclical', 'exchange': 'NASDAQ'})
+        elif query.upper() in ['GOOGLE', 'GOOGL', 'ALPHABET']:
+            search_results.insert(0, {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology', 'exchange': 'NASDAQ'})
+        elif query.upper() in ['AMAZON', 'AMZN']:
+            search_results.insert(0, {'symbol': 'AMZN', 'name': 'Amazon.com, Inc.', 'sector': 'Consumer Cyclical', 'exchange': 'NASDAQ'})
+        elif query.upper() in ['NVIDIA', 'NVDA']:
+            search_results.insert(0, {'symbol': 'NVDA', 'name': 'NVIDIA Corporation', 'sector': 'Technology', 'exchange': 'NASDAQ'})
+        elif query.upper() in ['META', 'FACEBOOK', 'FB']:
+            search_results.insert(0, {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology', 'exchange': 'NASDAQ'})
+        elif query.upper() in ['NETFLIX', 'NFLX']:
+            search_results.insert(0, {'symbol': 'NFLX', 'name': 'Netflix, Inc.', 'sector': 'Communication Services', 'exchange': 'NASDAQ'})
+        
+        # Remove duplicates
+        seen = set()
+        unique_results = []
+        for result in search_results:
+            if result['symbol'] not in seen:
+                seen.add(result['symbol'])
+                unique_results.append(result)
+        
+        return unique_results[:5]  # Return max 5 results
+        
+    except Exception as e:
+        st.error(f"Search error: {str(e)}")
+        return []
 
 # Create layout with sidebar and main content
 col1, col2 = st.columns([1, 2])
@@ -156,20 +231,49 @@ with col1:
     
     # Add Custom Ticker
     st.markdown("**Add Custom Ticker:**")
-    st.markdown("Enter Symbol (e.g., AAPL, TSLA, SPY)")
+    st.markdown("Enter Symbol or Company Name")
     
-    col_input, col_add = st.columns([3, 1])
-    with col_input:
-        custom_ticker = st.text_input(
-            "custom_ticker",
-            placeholder="Type ticker symbol...",
-            label_visibility="collapsed"
-        )
+    # Search input
+    search_query = st.text_input(
+        "search_ticker",
+        placeholder="e.g., Apple, AAPL, Tesla...",
+        label_visibility="collapsed",
+        key="search_input"
+    )
+    
+    # Search and Add buttons
+    col_search, col_add = st.columns([2, 1])
+    with col_search:
+        if st.button("🔍 Search", use_container_width=True, disabled=not search_query):
+            st.session_state.search_results = search_ticker(search_query)
+            st.session_state.show_search_results = True
+    
     with col_add:
-        if st.button("➕", disabled=not custom_ticker, help="Add ticker"):
-            if custom_ticker.upper() not in st.session_state.selected_assets:
-                st.session_state.selected_assets.append(custom_ticker.upper())
+        if st.button("➕ Add", help="Add as exact symbol", disabled=not search_query):
+            if search_query.upper() not in st.session_state.selected_assets:
+                st.session_state.selected_assets.append(search_query.upper())
+                st.session_state.show_search_results = False
                 st.rerun()
+    
+    # Display search results
+    if st.session_state.show_search_results and st.session_state.search_results:
+        st.markdown("**Search Results:**")
+        for result in st.session_state.search_results:
+            col_info, col_select = st.columns([4, 1])
+            with col_info:
+                st.markdown(f"""
+                **{result['symbol']}** - {result['name']}  
+                *{result.get('sector', 'N/A')} | {result.get('exchange', 'N/A')}*
+                """)
+            with col_select:
+                if st.button("✅", key=f"select_{result['symbol']}", help="Add this ticker"):
+                    if result['symbol'] not in st.session_state.selected_assets:
+                        st.session_state.selected_assets.append(result['symbol'])
+                        st.session_state.show_search_results = False
+                        st.rerun()
+    
+    elif st.session_state.show_search_results and not st.session_state.search_results:
+        st.info("No results found. Try searching with a different term or add the symbol directly.")
     
     st.markdown("---")
     
@@ -307,13 +411,13 @@ with col2:
         2. **Configure Timeframe**: Select data interval and period (combinations are automatically validated)
         3. **Download**: Get a ZIP file with CSV data for all selected assets
         
-        **Supported Symbols:**
-        - **Stocks**: AAPL, TSLA, MSFT, GOOGL, etc.
-        - **Crypto**: BTC-USD, ETH-USD, ADA-USD, etc.  
-        - **Forex**: EURUSD=X, GBPUSD=X, USDJPY=X, etc.
-        - **Commodities**: GC=F (Gold), CL=F (Oil), SI=F (Silver), etc.
+        **Supported Search Terms:**
+        - **Company Names**: Apple, Microsoft, Tesla, Amazon, etc.
+        - **Ticker Symbols**: AAPL, MSFT, TSLA, AMZN, etc.
+        - **Crypto**: Bitcoin (BTC-USD), Ethereum (ETH-USD)
+        - **Forex**: Euro USD, GBP USD, etc.
         
-        **Note**: Timeframe and period combinations are automatically validated to prevent "No data found" errors.
+        **Tip**: Use the search function in the sidebar to find ticker symbols by company name!
         """)
 
 # Footer
