@@ -3,9 +3,7 @@ import yfinance as yf
 import pandas as pd
 import zipfile
 import io
-import base64
-from datetime import datetime, timedelta
-import os
+from datetime import datetime
 import requests
 import json
 
@@ -51,161 +49,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS to create sidebar layout and styling
-st.markdown("""
-<style>
-    .main-content {
-        margin-left: 0px;
-    }
-
-# Popular stocks database for instant suggestions
-POPULAR_STOCKS = {
-    # Technology
-    'apple': {'symbol': 'AAPL', 'name': 'Apple Inc.', 'sector': 'Technology'},
-    'microsoft': {'symbol': 'MSFT', 'name': 'Microsoft Corporation', 'sector': 'Technology'},
-    'google': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology'},
-    'alphabet': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology'},
-    'tesla': {'symbol': 'TSLA', 'name': 'Tesla, Inc.', 'sector': 'Automotive'},
-    'amazon': {'symbol': 'AMZN', 'name': 'Amazon.com, Inc.', 'sector': 'E-commerce'},
-    'meta': {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology'},
-    'facebook': {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology'},
-    'nvidia': {'symbol': 'NVDA', 'name': 'NVIDIA Corporation', 'sector': 'Technology'},
-    'netflix': {'symbol': 'NFLX', 'name': 'Netflix, Inc.', 'sector': 'Media'},
-    'uber': {'symbol': 'UBER', 'name': 'Uber Technologies, Inc.', 'sector': 'Transportation'},
-    'zoom': {'symbol': 'ZM', 'name': 'Zoom Video Communications', 'sector': 'Technology'},
-    'spotify': {'symbol': 'SPOT', 'name': 'Spotify Technology S.A.', 'sector': 'Media'},
-    'adobe': {'symbol': 'ADBE', 'name': 'Adobe Inc.', 'sector': 'Technology'},
-    'salesforce': {'symbol': 'CRM', 'name': 'Salesforce, Inc.', 'sector': 'Technology'},
-    
-    # Finance
-    'berkshire': {'symbol': 'BRK-B', 'name': 'Berkshire Hathaway Inc.', 'sector': 'Financial'},
-    'jpmorgan': {'symbol': 'JPM', 'name': 'JPMorgan Chase & Co.', 'sector': 'Financial'},
-    'visa': {'symbol': 'V', 'name': 'Visa Inc.', 'sector': 'Financial'},
-    'mastercard': {'symbol': 'MA', 'name': 'Mastercard Incorporated', 'sector': 'Financial'},
-    'paypal': {'symbol': 'PYPL', 'name': 'PayPal Holdings, Inc.', 'sector': 'Financial'},
-    
-    # Healthcare
-    'johnson': {'symbol': 'JNJ', 'name': 'Johnson & Johnson', 'sector': 'Healthcare'},
-    'pfizer': {'symbol': 'PFE', 'name': 'Pfizer Inc.', 'sector': 'Healthcare'},
-    'moderna': {'symbol': 'MRNA', 'name': 'Moderna, Inc.', 'sector': 'Healthcare'},
-    
-    # Consumer
-    'coca': {'symbol': 'KO', 'name': 'The Coca-Cola Company', 'sector': 'Consumer'},
-    'pepsi': {'symbol': 'PEP', 'name': 'PepsiCo, Inc.', 'sector': 'Consumer'},
-    'walmart': {'symbol': 'WMT', 'name': 'Walmart Inc.', 'sector': 'Retail'},
-    'disney': {'symbol': 'DIS', 'name': 'The Walt Disney Company', 'sector': 'Media'},
-    'nike': {'symbol': 'NKE', 'name': 'NIKE, Inc.', 'sector': 'Consumer'},
-    'starbucks': {'symbol': 'SBUX', 'name': 'Starbucks Corporation', 'sector': 'Consumer'},
-    
-    # ETFs and Indices
-    'spy': {'symbol': 'SPY', 'name': 'SPDR S&P 500 ETF Trust', 'sector': 'ETF'},
-    'qqq': {'symbol': 'QQQ', 'name': 'Invesco QQQ Trust', 'sector': 'ETF'},
-    'vti': {'symbol': 'VTI', 'name': 'Vanguard Total Stock Market ETF', 'sector': 'ETF'},
-    
-    # Crypto-related
-    'bitcoin': {'symbol': 'BTC-USD', 'name': 'Bitcoin USD', 'sector': 'Cryptocurrency'},
-    'ethereum': {'symbol': 'ETH-USD', 'name': 'Ethereum USD', 'sector': 'Cryptocurrency'},
-    'coinbase': {'symbol': 'COIN', 'name': 'Coinbase Global, Inc.', 'sector': 'Cryptocurrency'},
-}
-
-def get_instant_suggestions(query):
-    """Get instant suggestions from popular stocks database"""
-    if not query or len(query) < 2:
-        return []
-    
-    query_lower = query.lower()
-    suggestions = []
-    
-    # Search in popular stocks
-    for key, stock in POPULAR_STOCKS.items():
-        if (query_lower in key or 
-            query_lower in stock['symbol'].lower() or 
-            query_lower in stock['name'].lower()):
-            suggestions.append(stock)
-    
-    # Remove duplicates and limit results
-    seen = set()
-    unique_suggestions = []
-    for suggestion in suggestions:
-        if suggestion['symbol'] not in seen:
-            seen.add(suggestion['symbol'])
-            unique_suggestions.append(suggestion)
-            if len(unique_suggestions) >= 5:
-                break
-    
-    return unique_suggestions
-    .sidebar {
-        background-color: #f0f2f6;
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-    }
-    .sidebar-header {
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: #2c3e50;
-        margin-bottom: 15px;
-        display: flex;
-        align-items: center;
-    }
-    .selected-asset {
-        background-color: #e74c3c;
-        color: white;
-        padding: 5px 10px;
-        border-radius: 15px;
-        margin: 2px;
-        display: inline-block;
-        font-size: 0.9rem;
-    }
-    .main-header {
-        background: linear-gradient(90deg, #3498db, #2980b9);
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    .main-header h1 {
-        margin: 0;
-        font-size: 2.5rem;
-    }
-    .main-header p {
-        margin: 5px 0 0 0;
-        font-size: 1.1rem;
-        opacity: 0.9;
-    }
-    .download-section {
-        background-color: #ecf0f1;
-        padding: 20px;
-        border-radius: 10px;
-        margin-top: 20px;
-    }
-    .stSelectbox > div > div > select {
-        background-color: white;
-    }
-    .version-info {
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 5px;
-        border-left: 4px solid #3498db;
-        margin: 10px 0;
-        font-size: 0.9rem;
-    }
-    .changelog-item {
-        background-color: #fff;
-        padding: 8px;
-        margin: 5px 0;
-        border-radius: 4px;
-        border-left: 3px solid #27ae60;
-    }
-    .version-header {
-        color: #2c3e50;
-        font-weight: bold;
-        margin-bottom: 5px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # Initialize session state
 if 'selected_assets' not in st.session_state:
     st.session_state.selected_assets = []
@@ -232,9 +75,9 @@ predefined_assets = {
 
 # Timeframe and period compatibility mapping
 timeframe_periods = {
-    '1m': ['1d', '5d', '7d'],  # Yahoo Finance limits 1m data to max 7 days
+    '1m': ['1d', '5d', '7d'],
     '2m': ['1d', '5d', '7d'], 
-    '5m': ['1d', '5d', '7d'],  # Short timeframes limited to 7 days max
+    '5m': ['1d', '5d', '7d'],
     '15m': ['1d', '5d', '7d'],
     '30m': ['1d', '5d', '7d'],
     '60m': ['1d', '5d', '7d'],
@@ -247,27 +90,70 @@ timeframe_periods = {
     '3mo': ['2y', '5y', '10y', 'ytd', 'max']
 }
 
-# Function to search for tickers
+# Popular stocks database for instant suggestions
+POPULAR_STOCKS = {
+    'apple': {'symbol': 'AAPL', 'name': 'Apple Inc.', 'sector': 'Technology'},
+    'microsoft': {'symbol': 'MSFT', 'name': 'Microsoft Corporation', 'sector': 'Technology'},
+    'google': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology'},
+    'alphabet': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology'},
+    'tesla': {'symbol': 'TSLA', 'name': 'Tesla, Inc.', 'sector': 'Automotive'},
+    'amazon': {'symbol': 'AMZN', 'name': 'Amazon.com, Inc.', 'sector': 'E-commerce'},
+    'meta': {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology'},
+    'facebook': {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology'},
+    'nvidia': {'symbol': 'NVDA', 'name': 'NVIDIA Corporation', 'sector': 'Technology'},
+    'netflix': {'symbol': 'NFLX', 'name': 'Netflix, Inc.', 'sector': 'Media'},
+    'uber': {'symbol': 'UBER', 'name': 'Uber Technologies, Inc.', 'sector': 'Transportation'},
+    'zoom': {'symbol': 'ZM', 'name': 'Zoom Video Communications', 'sector': 'Technology'},
+    'spotify': {'symbol': 'SPOT', 'name': 'Spotify Technology S.A.', 'sector': 'Media'},
+    'visa': {'symbol': 'V', 'name': 'Visa Inc.', 'sector': 'Financial'},
+    'mastercard': {'symbol': 'MA', 'name': 'Mastercard Incorporated', 'sector': 'Financial'},
+    'paypal': {'symbol': 'PYPL', 'name': 'PayPal Holdings, Inc.', 'sector': 'Financial'},
+    'coca': {'symbol': 'KO', 'name': 'The Coca-Cola Company', 'sector': 'Consumer'},
+    'pepsi': {'symbol': 'PEP', 'name': 'PepsiCo, Inc.', 'sector': 'Consumer'},
+    'walmart': {'symbol': 'WMT', 'name': 'Walmart Inc.', 'sector': 'Retail'},
+    'disney': {'symbol': 'DIS', 'name': 'The Walt Disney Company', 'sector': 'Media'},
+    'nike': {'symbol': 'NKE', 'name': 'NIKE, Inc.', 'sector': 'Consumer'},
+    'spy': {'symbol': 'SPY', 'name': 'SPDR S&P 500 ETF Trust', 'sector': 'ETF'},
+    'qqq': {'symbol': 'QQQ', 'name': 'Invesco QQQ Trust', 'sector': 'ETF'},
+    'bitcoin': {'symbol': 'BTC-USD', 'name': 'Bitcoin USD', 'sector': 'Cryptocurrency'},
+    'ethereum': {'symbol': 'ETH-USD', 'name': 'Ethereum USD', 'sector': 'Cryptocurrency'},
+}
+
+def get_instant_suggestions(query):
+    """Get instant suggestions from popular stocks database"""
+    if not query or len(query) < 2:
+        return []
+    
+    query_lower = query.lower()
+    suggestions = []
+    
+    for key, stock in POPULAR_STOCKS.items():
+        if (query_lower in key or 
+            query_lower in stock['symbol'].lower() or 
+            query_lower in stock['name'].lower()):
+            suggestions.append(stock)
+    
+    seen = set()
+    unique_suggestions = []
+    for suggestion in suggestions:
+        if suggestion['symbol'] not in seen:
+            seen.add(suggestion['symbol'])
+            unique_suggestions.append(suggestion)
+            if len(unique_suggestions) >= 5:
+                break
+    
+    return unique_suggestions
+
 def search_ticker(query):
     """Search for ticker symbols using yfinance"""
     if not query or len(query) < 2:
         return []
     
     try:
-        # Use yfinance's Ticker search functionality
-        # This is a simple approach - in practice, you might want to use a more comprehensive search
         search_results = []
+        variations = [query.upper(), f"{query.upper()}.TO", f"{query.upper()}.L"]
         
-        # Common stock exchanges and suffixes to try
-        variations = [
-            query.upper(),
-            f"{query.upper()}.TO",  # Toronto
-            f"{query.upper()}.L",   # London
-            f"{query.upper()}.T",   # Tokyo
-            f"{query.upper()}.HK",  # Hong Kong
-        ]
-        
-        for variation in variations[:3]:  # Limit to first 3 variations
+        for variation in variations[:2]:
             try:
                 ticker = yf.Ticker(variation)
                 info = ticker.info
@@ -279,30 +165,11 @@ def search_ticker(query):
                         'sector': info.get('sector', ''),
                         'exchange': info.get('exchange', '')
                     })
-                    if len(search_results) >= 5:  # Limit results
+                    if len(search_results) >= 3:
                         break
             except:
                 continue
         
-        # Also try some popular ticker patterns
-        if query.upper() in ['APPLE', 'AAPL']:
-            search_results.insert(0, {'symbol': 'AAPL', 'name': 'Apple Inc.', 'sector': 'Technology', 'exchange': 'NASDAQ'})
-        elif query.upper() in ['MICROSOFT', 'MSFT']:
-            search_results.insert(0, {'symbol': 'MSFT', 'name': 'Microsoft Corporation', 'sector': 'Technology', 'exchange': 'NASDAQ'})
-        elif query.upper() in ['TESLA', 'TSLA']:
-            search_results.insert(0, {'symbol': 'TSLA', 'name': 'Tesla, Inc.', 'sector': 'Consumer Cyclical', 'exchange': 'NASDAQ'})
-        elif query.upper() in ['GOOGLE', 'GOOGL', 'ALPHABET']:
-            search_results.insert(0, {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology', 'exchange': 'NASDAQ'})
-        elif query.upper() in ['AMAZON', 'AMZN']:
-            search_results.insert(0, {'symbol': 'AMZN', 'name': 'Amazon.com, Inc.', 'sector': 'Consumer Cyclical', 'exchange': 'NASDAQ'})
-        elif query.upper() in ['NVIDIA', 'NVDA']:
-            search_results.insert(0, {'symbol': 'NVDA', 'name': 'NVIDIA Corporation', 'sector': 'Technology', 'exchange': 'NASDAQ'})
-        elif query.upper() in ['META', 'FACEBOOK', 'FB']:
-            search_results.insert(0, {'symbol': 'META', 'name': 'Meta Platforms, Inc.', 'sector': 'Technology', 'exchange': 'NASDAQ'})
-        elif query.upper() in ['NETFLIX', 'NFLX']:
-            search_results.insert(0, {'symbol': 'NFLX', 'name': 'Netflix, Inc.', 'sector': 'Communication Services', 'exchange': 'NASDAQ'})
-        
-        # Remove duplicates
         seen = set()
         unique_results = []
         for result in search_results:
@@ -310,23 +177,34 @@ def search_ticker(query):
                 seen.add(result['symbol'])
                 unique_results.append(result)
         
-        return unique_results[:5]  # Return max 5 results
+        return unique_results[:3]
         
     except Exception as e:
-        st.error(f"Search error: {str(e)}")
         return []
+
+# Add CSS styling
+st.markdown(
+    '<style>'
+    '.sidebar{background-color:#f0f2f6;padding:20px;border-radius:10px;margin-bottom:20px;}'
+    '.sidebar-header{font-size:1.2rem;font-weight:bold;color:#2c3e50;margin-bottom:15px;}'
+    '.selected-asset{background-color:#e74c3c;color:white;padding:5px 10px;border-radius:15px;margin:2px;display:inline-block;font-size:0.9rem;}'
+    '.main-header{background:linear-gradient(90deg,#3498db,#2980b9);color:white;padding:20px;border-radius:10px;text-align:center;margin-bottom:20px;}'
+    '.main-header h1{margin:0;font-size:2.5rem;}'
+    '.main-header p{margin:5px 0 0 0;font-size:1.1rem;opacity:0.9;}'
+    '.download-section{background-color:#ecf0f1;padding:20px;border-radius:10px;margin-top:20px;}'
+    '.version-info{background-color:#f8f9fa;padding:10px;border-radius:5px;border-left:4px solid #3498db;margin:10px 0;font-size:0.9rem;}'
+    '.changelog-item{background-color:#fff;padding:8px;margin:5px 0;border-radius:4px;border-left:3px solid #27ae60;}'
+    '.version-header{color:#2c3e50;font-weight:bold;margin-bottom:5px;}'
+    '</style>', 
+    unsafe_allow_html=True
+)
 
 # Create layout with sidebar and main content
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    # Sidebar content
     st.markdown('<div class="sidebar">', unsafe_allow_html=True)
-    
-    # Configuration header
     st.markdown('<div class="sidebar-header">📊 Configuration</div>', unsafe_allow_html=True)
-    
-    # Select Assets section
     st.markdown('<div class="sidebar-header">🏠 Select Assets</div>', unsafe_allow_html=True)
     
     # Predefined Assets dropdown
@@ -349,13 +227,13 @@ with col1:
         for asset in st.session_state.selected_assets:
             col_asset, col_remove = st.columns([3, 1])
             with col_asset:
-                # Find display name
                 display_name = asset
                 for display, symbol in predefined_assets.items():
                     if symbol == asset:
                         display_name = display.split(' (')[0]
                         break
-                st.markdown(f'<div class="selected-asset">{display_name}</div>', unsafe_allow_html=True)
+                asset_html = f'<div class="selected-asset">{display_name}</div>'
+                st.markdown(asset_html, unsafe_allow_html=True)
             with col_remove:
                 if st.button("❌", key=f"remove_{asset}", help="Remove asset"):
                     st.session_state.selected_assets.remove(asset)
@@ -367,7 +245,6 @@ with col1:
     st.markdown("**Add Custom Ticker:**")
     st.markdown("Enter Symbol or Company Name")
     
-    # Search input with real-time suggestions
     search_query = st.text_input(
         "search_ticker",
         placeholder="e.g., Apple, AAPL, Tesla...",
@@ -379,13 +256,11 @@ with col1:
     if search_query and search_query != st.session_state.last_search_query:
         st.session_state.last_search_query = search_query
         if len(search_query) >= 2:
-            # Get instant suggestions
             instant_suggestions = get_instant_suggestions(search_query)
             if instant_suggestions:
                 st.session_state.search_results = instant_suggestions
                 st.session_state.show_search_results = True
             else:
-                # If no instant suggestions, try live search
                 st.session_state.search_results = search_ticker(search_query)
                 st.session_state.show_search_results = True
         else:
@@ -395,7 +270,6 @@ with col1:
     col_search, col_add = st.columns([2, 1])
     with col_search:
         if st.button("🔍 Search More", use_container_width=True, disabled=not search_query):
-            # Detailed search using yfinance
             st.session_state.search_results = search_ticker(search_query)
             st.session_state.show_search_results = True
     
@@ -404,42 +278,33 @@ with col1:
             if search_query.upper() not in st.session_state.selected_assets:
                 st.session_state.selected_assets.append(search_query.upper())
                 st.session_state.show_search_results = False
-                # Clear search
                 st.session_state.last_search_query = ""
                 st.rerun()
     
-    # Display search results with improved styling
+    # Display search results
     if st.session_state.show_search_results and st.session_state.search_results:
         st.markdown("**💡 Suggestions:**")
         
-        # Create a container for better styling
-        with st.container():
-            for i, result in enumerate(st.session_state.search_results):
-                # Create a card-like appearance for each suggestion
-                col_info, col_select = st.columns([5, 1])
+        for i, result in enumerate(st.session_state.search_results):
+            col_info, col_select = st.columns([5, 1])
+            
+            with col_info:
+                is_selected = result['symbol'] in st.session_state.selected_assets
+                status_icon = "✅" if is_selected else "📈"
+                bg_color = '#e8f5e8' if is_selected else '#f8f9fa'
                 
-                with col_info:
-                    # Check if already selected
-                    is_selected = result['symbol'] in st.session_state.selected_assets
-                    status_icon = "✅" if is_selected else "📈"
-                    
-                    st.markdown(f"""
-                    <div style="background-color: {'#e8f5e8' if is_selected else '#f8f9fa'}; 
-                                padding: 8px; border-radius: 5px; margin: 2px 0;">
-                        <strong style="color: #2c3e50;">{status_icon} {result['symbol']}</strong> - {result['name']}<br>
-                        <small style="color: #7f8c8d;"><em>{result.get('sector', 'N/A')}</em></small>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col_select:
-                    if not is_selected:
-                        if st.button("✅", key=f"select_{result['symbol']}_{i}", help="Add this ticker"):
-                            st.session_state.selected_assets.append(result['symbol'])
-                            st.session_state.show_search_results = False
-                            st.session_state.last_search_query = ""
-                            st.rerun()
-                    else:
-                        st.markdown("*Added*")
+                card_html = f'<div style="background-color: {bg_color}; padding: 8px; border-radius: 5px; margin: 2px 0;"><strong style="color: #2c3e50;">{status_icon} {result["symbol"]}</strong> - {result["name"]}<br><small style="color: #7f8c8d;"><em>{result.get("sector", "N/A")}</em></small></div>'
+                st.markdown(card_html, unsafe_allow_html=True)
+            
+            with col_select:
+                if not is_selected:
+                    if st.button("✅", key=f"select_{result['symbol']}_{i}", help="Add this ticker"):
+                        st.session_state.selected_assets.append(result['symbol'])
+                        st.session_state.show_search_results = False
+                        st.session_state.last_search_query = ""
+                        st.rerun()
+                else:
+                    st.markdown("*Added*")
     
     elif st.session_state.show_search_results and not st.session_state.search_results and search_query:
         st.info("💭 No suggestions found. Try a different term or use 'Add Direct' to add the symbol as-is.")
@@ -468,24 +333,48 @@ with col1:
     # Timeframe Settings
     st.markdown('<div class="sidebar-header">⏰ Timeframe Settings</div>', unsafe_allow_html=True)
     
-    # Timeframe selection
     st.markdown("**Timeframe**")
     selected_timeframe = st.selectbox(
         "timeframe",
         options=list(timeframe_periods.keys()),
-        index=8,  # Default to 1d
+        index=8,
         label_visibility="collapsed"
     )
     
-    # Period selection based on timeframe
     st.markdown("**Period**")
     available_periods = timeframe_periods[selected_timeframe]
     selected_period = st.selectbox(
         "period",
         options=available_periods,
-        index=0,  # Default to first available
+        index=0,
         label_visibility="collapsed"
     )
+    
+    st.markdown("---")
+    
+    # Version display in sidebar
+    sidebar_version = f'<div style="text-align: center; padding: 10px; background-color: #ecf0f1; border-radius: 5px;"><small><strong>v{APP_VERSION}</strong> • {VERSION_DATE}</small></div>'
+    st.markdown(sidebar_version, unsafe_allow_html=True)
+    
+    # Changelog expander
+    with st.expander("📋 Version History & Changelog"):
+        st.markdown("### Recent Updates")
+        
+        for version, info in list(CHANGELOG.items())[:3]:
+            changes_text = "<br>".join([f"• {change}" for change in info['changes']])
+            changelog_html = f'<div class="changelog-item"><div class="version-header">v{version} - {info["date"]}</div>{changes_text}</div>'
+            st.markdown(changelog_html, unsafe_allow_html=True)
+        
+        if len(CHANGELOG) > 3:
+            st.markdown(f"*...and {len(CHANGELOG) - 3} more versions*")
+        
+        st.markdown("### 🛠️ Technical Details")
+        tech_details = f"- **Framework**: Streamlit {st.__version__}\n"
+        tech_details += "- **Data Source**: Yahoo Finance (yfinance)\n"
+        tech_details += "- **Python Version**: 3.13+\n"
+        tech_details += f"- **Last Updated**: {VERSION_DATE}\n"
+        tech_details += "- **Dependencies**: pandas, yfinance, zipfile"
+        st.markdown(tech_details)
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -504,14 +393,12 @@ with col2:
         if st.button("🚀 Download Data & Get ZIP File", type="primary", use_container_width=True):
             try:
                 with st.spinner('Downloading data...'):
-                    # Create a BytesIO object to store the zip file
                     zip_buffer = io.BytesIO()
                     successful_downloads = 0
                     
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                         for asset in st.session_state.selected_assets:
                             try:
-                                # Download data from yfinance
                                 ticker = yf.Ticker(asset)
                                 data = ticker.history(
                                     period=selected_period,
@@ -519,15 +406,9 @@ with col2:
                                 )
                                 
                                 if not data.empty:
-                                    # Prepare filename
                                     filename = f"{asset}_{selected_timeframe}_{selected_period}.csv"
-                                    
-                                    # Convert to CSV string
                                     csv_string = data.to_csv()
-                                    
-                                    # Add to zip file
                                     zip_file.writestr(filename, csv_string)
-                                    
                                     successful_downloads += 1
                                     st.success(f"✅ Downloaded {asset} - {len(data)} records")
                                 else:
@@ -537,10 +418,8 @@ with col2:
                                 st.error(f"❌ Error downloading {asset}: {str(e)}")
                     
                     if successful_downloads > 0:
-                        # Prepare download
                         zip_buffer.seek(0)
                         
-                        # Create download button
                         st.download_button(
                             label="📦 Download ZIP File",
                             data=zip_buffer.getvalue(),
@@ -609,38 +488,6 @@ with col2:
         instructions_text += "- Type \"etf\" → Find popular ETFs\n"
         instructions_text += "- Type exact symbols like \"MSFT\" for direct match"
         st.markdown(instructions_text)
-
-# Version Control and Changelog Section (in sidebar)
-with col1:
-    st.markdown("---")
-    
-    # Version display in sidebar
-    sidebar_version = f'<div style="text-align: center; padding: 10px; background-color: #ecf0f1; border-radius: 5px;"><small><strong>v{APP_VERSION}</strong> • {VERSION_DATE}</small></div>'
-    st.markdown(sidebar_version, unsafe_allow_html=True)
-    
-    # Changelog expander
-    with st.expander("📋 Version History & Changelog"):
-        st.markdown("### Recent Updates")
-        
-        for version, info in list(CHANGELOG.items())[:3]:  # Show last 3 versions
-            changes_text = "<br>".join([f"• {change}" for change in info['changes']])
-            changelog_html = f'<div class="changelog-item"><div class="version-header">v{version} - {info["date"]}</div>{changes_text}</div>'
-            st.markdown(changelog_html, unsafe_allow_html=True)
-        
-        if len(CHANGELOG) > 3:
-            st.markdown(f"*...and {len(CHANGELOG) - 3} more versions*")
-        
-        # Technical Info
-        st.markdown("### 🛠️ Technical Details")
-        tech_details = f"- **Framework**: Streamlit {st.__version__}\n"
-        tech_details += "- **Data Source**: Yahoo Finance (yfinance)\n"
-        tech_details += "- **Python Version**: 3.13+\n"
-        tech_details += f"- **Last Updated**: {VERSION_DATE}\n"
-        tech_details += "- **Dependencies**: pandas, yfinance, zipfile"
-        st.markdown(tech_details)
-
-# Main content continuation
-with col2:
 
 # Footer
 st.markdown("---")
