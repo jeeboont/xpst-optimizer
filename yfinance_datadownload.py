@@ -322,8 +322,11 @@ def search_ticker(query):
 
 def get_optimal_period_for_timeframe(timeframe: str) -> str:
     """Get the MAXIMUM period available for a given timeframe to download most data"""
+    # Handle invalid timeframes gracefully
+    if timeframe not in TIMEFRAME_CONFIG:
+        return '1mo'  # Safe default
+    
     config = TIMEFRAME_CONFIG.get(timeframe, {})
-    available_periods = config.get('available_periods', ['1mo'])
     
     # Return the MAXIMUM period available (last in the list) instead of recommended
     # This ensures users get the most data possible for each timeframe
@@ -331,14 +334,21 @@ def get_optimal_period_for_timeframe(timeframe: str) -> str:
         return '7d'  # Maximum for 1-minute data
     elif timeframe in ['2m', '5m', '15m', '1h', '4h']:
         return '1mo'  # Maximum for other intraday data (60 days)
-    else:
+    elif timeframe == '1d':
         return '1y'  # Good default for daily data
+    else:
+        return '1mo'  # Safe fallback
 
 def validate_timeframe_combinations(timeframes: List[str]) -> Dict[str, str]:
     """Validate selected timeframes and return recommended periods"""
     recommendations = {}
     for tf in timeframes:
-        recommendations[tf] = get_optimal_period_for_timeframe(tf)
+        # Only process valid timeframes that exist in TIMEFRAME_CONFIG
+        if tf in TIMEFRAME_CONFIG:
+            recommendations[tf] = get_optimal_period_for_timeframe(tf)
+        else:
+            # Skip invalid timeframes (like removed '10m')
+            continue
     return recommendations
 
 def resample_to_4h(df):
