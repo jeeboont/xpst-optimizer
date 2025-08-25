@@ -3,14 +3,27 @@ import yfinance as yf
 import pandas as pd
 import zipfile
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 import json
+import asyncio
+import concurrent.futures
+from typing import List, Dict, Tuple
 
 # App Version Control
-APP_VERSION = "2.1.0"
-VERSION_DATE = "2025-08-21"
+APP_VERSION = "2.2.0"
+VERSION_DATE = "2025-08-25"
 CHANGELOG = {
+    "2.2.0": {
+        "date": "2025-08-25",
+        "changes": [
+            "Added multiple timeframe selection capability",
+            "Implemented automatic period limits based on yfinance constraints",
+            "Added smart timeframe validation and recommendations",
+            "Enhanced download progress tracking",
+            "Improved error handling for timeframe-specific downloads"
+        ]
+    },
     "2.1.0": {
         "date": "2025-08-21",
         "changes": [
@@ -19,25 +32,6 @@ CHANGELOG = {
             "Improved real-time search with autocomplete",
             "Added popular stocks database for instant suggestions",
             "Enhanced UI with better visual feedback"
-        ]
-    },
-    "2.0.0": {
-        "date": "2025-08-21", 
-        "changes": [
-            "Complete UI redesign with left sidebar",
-            "Added real-time ticker search functionality",
-            "Implemented smart timeframe/period validation",
-            "Added data preview feature",
-            "Enhanced error handling and user feedback"
-        ]
-    },
-    "1.0.0": {
-        "date": "2025-08-21",
-        "changes": [
-            "Initial release",
-            "Basic asset selection and data download",
-            "ZIP file export functionality",
-            "Support for stocks, crypto, forex, and commodities"
         ]
     }
 }
@@ -52,6 +46,8 @@ st.set_page_config(
 # Initialize session state
 if 'selected_assets' not in st.session_state:
     st.session_state.selected_assets = []
+if 'selected_timeframes' not in st.session_state:
+    st.session_state.selected_timeframes = ['1d']
 if 'search_results' not in st.session_state:
     st.session_state.search_results = []
 if 'show_search_results' not in st.session_state:
@@ -73,21 +69,80 @@ predefined_assets = {
     'USDCHF (USD/CHF)': 'USDCHF=X'
 }
 
-# Timeframe and period compatibility mapping
-timeframe_periods = {
-    '1m': ['1d', '5d', '7d'],
-    '2m': ['1d', '5d', '7d'], 
-    '5m': ['1d', '5d', '7d'],
-    '15m': ['1d', '5d', '7d'],
-    '30m': ['1d', '5d', '7d'],
-    '60m': ['1d', '5d', '7d'],
-    '90m': ['1d', '5d', '7d'],
-    '1h': ['1d', '5d', '7d'],
-    '1d': ['5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'],
-    '5d': ['1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'],
-    '1wk': ['1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'],
-    '1mo': ['1y', '2y', '5y', '10y', 'ytd', 'max'],
-    '3mo': ['2y', '5y', '10y', 'ytd', 'max']
+# Enhanced timeframe configuration with automatic period limits
+TIMEFRAME_CONFIG = {
+    '1m': {
+        'name': '1 Minute',
+        'yf_interval': '1m',
+        'max_days': 7,
+        'recommended_period': '7d',
+        'available_periods': ['1d', '2d', '3d', '5d', '7d'],
+        'description': 'Intraday 1-minute data (max 7 days)',
+        'icon': '🟢'
+    },
+    '2m': {
+        'name': '2 Minutes',
+        'yf_interval': '2m',
+        'max_days': 60,
+        'recommended_period': '5d',
+        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
+        'description': 'Intraday 2-minute data (max 60 days)',
+        'icon': '🟢'
+    },
+    '5m': {
+        'name': '5 Minutes',
+        'yf_interval': '5m',
+        'max_days': 60,
+        'recommended_period': '5d',
+        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
+        'description': 'Intraday 5-minute data (max 60 days)',
+        'icon': '🔵'
+    },
+    '10m': {
+        'name': '10 Minutes',
+        'yf_interval': '15m',  # yfinance doesn't have 10m, use 15m as closest
+        'max_days': 60,
+        'recommended_period': '5d',
+        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
+        'description': '15-minute data (closest to 10m, max 60 days)',
+        'icon': '🔵'
+    },
+    '15m': {
+        'name': '15 Minutes',
+        'yf_interval': '15m',
+        'max_days': 60,
+        'recommended_period': '5d',
+        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
+        'description': 'Intraday 15-minute data (max 60 days)',
+        'icon': '🔵'
+    },
+    '1h': {
+        'name': '1 Hour',
+        'yf_interval': '1h',
+        'max_days': 730,
+        'recommended_period': '1mo',
+        'available_periods': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y'],
+        'description': 'Hourly data (max 2 years)',
+        'icon': '🟡'
+    },
+    '4h': {
+        'name': '4 Hours',
+        'yf_interval': '1h',  # Use 1h and resample to 4h later
+        'max_days': 730,
+        'recommended_period': '3mo',
+        'available_periods': ['5d', '1mo', '3mo', '6mo', '1y', '2y'],
+        'description': '4-hour data (resampled from 1h, max 2 years)',
+        'icon': '🟠'
+    },
+    '1d': {
+        'name': 'Daily',
+        'yf_interval': '1d',
+        'max_days': None,  # No limit for daily data
+        'recommended_period': '1y',
+        'available_periods': ['5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'],
+        'description': 'Daily data (unlimited history)',
+        'icon': '🔴'
+    }
 }
 
 # Popular stocks database for instant suggestions
@@ -119,8 +174,9 @@ POPULAR_STOCKS = {
     'ethereum': {'symbol': 'ETH-USD', 'name': 'Ethereum USD', 'sector': 'Cryptocurrency'},
 }
 
+@st.cache_data(ttl=300)
 def get_instant_suggestions(query):
-    """Get instant suggestions from popular stocks database"""
+    """Get instant suggestions from popular stocks database with caching"""
     if not query or len(query) < 2:
         return []
     
@@ -144,8 +200,9 @@ def get_instant_suggestions(query):
     
     return unique_suggestions
 
+@st.cache_data(ttl=300)
 def search_ticker(query):
-    """Search for ticker symbols using yfinance"""
+    """Search for ticker symbols using yfinance with caching"""
     if not query or len(query) < 2:
         return []
     
@@ -182,12 +239,91 @@ def search_ticker(query):
     except Exception as e:
         return []
 
+def get_optimal_period_for_timeframe(timeframe: str) -> str:
+    """Get the optimal period for a given timeframe"""
+    config = TIMEFRAME_CONFIG.get(timeframe, {})
+    return config.get('recommended_period', '1mo')
+
+def validate_timeframe_combinations(timeframes: List[str]) -> Dict[str, str]:
+    """Validate selected timeframes and return recommended periods"""
+    recommendations = {}
+    for tf in timeframes:
+        recommendations[tf] = get_optimal_period_for_timeframe(tf)
+    return recommendations
+
+def resample_to_4h(df):
+    """Resample 1-hour data to 4-hour data"""
+    if df.empty:
+        return df
+    
+    # Resample to 4-hour intervals
+    df_4h = df.resample('4h').agg({
+        'Open': 'first',
+        'High': 'max',
+        'Low': 'min',
+        'Close': 'last',
+        'Volume': 'sum'
+    })
+    
+    # Remove rows with NaN values (weekends, holidays)
+    df_4h = df_4h.dropna()
+    return df_4h
+
+def download_single_asset_timeframe(asset: str, timeframe: str, period: str) -> Tuple[str, str, str, pd.DataFrame, str]:
+    """Download data for a single asset and timeframe combination"""
+    try:
+        config = TIMEFRAME_CONFIG[timeframe]
+        ticker = yf.Ticker(asset)
+        
+        # Download data with the yfinance interval
+        data = ticker.history(
+            period=period,
+            interval=config['yf_interval']
+        )
+        
+        # Special handling for 4-hour data (resample from 1-hour)
+        if timeframe == '4h' and not data.empty:
+            data = resample_to_4h(data)
+        
+        if not data.empty:
+            return asset, timeframe, period, data, "success"
+        else:
+            return asset, timeframe, period, pd.DataFrame(), "no_data"
+            
+    except Exception as e:
+        return asset, timeframe, period, pd.DataFrame(), f"error: {str(e)}"
+
+def download_multiple_assets_timeframes(assets: List[str], timeframes: List[str], period_map: Dict[str, str]) -> List[Tuple]:
+    """Download data for multiple assets and timeframes using concurrent execution"""
+    results = []
+    
+    # Create all combinations of assets and timeframes
+    tasks = []
+    for asset in assets:
+        for timeframe in timeframes:
+            period = period_map[timeframe]
+            tasks.append((asset, timeframe, period))
+    
+    # Use ThreadPoolExecutor for concurrent downloads
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_task = {
+            executor.submit(download_single_asset_timeframe, asset, tf, period): (asset, tf, period)
+            for asset, tf, period in tasks
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_task):
+            result = future.result()
+            results.append(result)
+    
+    return results
+
 # Add CSS styling
 st.markdown(
     '<style>'
     '.sidebar{background-color:#f0f2f6;padding:20px;border-radius:10px;margin-bottom:20px;}'
     '.sidebar-header{font-size:1.2rem;font-weight:bold;color:#2c3e50;margin-bottom:15px;}'
     '.selected-asset{background-color:#e74c3c;color:white;padding:5px 10px;border-radius:15px;margin:2px;display:inline-block;font-size:0.9rem;}'
+    '.selected-timeframe{background-color:#3498db;color:white;padding:5px 10px;border-radius:15px;margin:2px;display:inline-block;font-size:0.9rem;}'
     '.main-header{background:linear-gradient(90deg,#3498db,#2980b9);color:white;padding:20px;border-radius:10px;text-align:center;margin-bottom:20px;}'
     '.main-header h1{margin:0;font-size:2.5rem;}'
     '.main-header p{margin:5px 0 0 0;font-size:1.1rem;opacity:0.9;}'
@@ -195,6 +331,10 @@ st.markdown(
     '.version-info{background-color:#f8f9fa;padding:10px;border-radius:5px;border-left:4px solid #3498db;margin:10px 0;font-size:0.9rem;}'
     '.changelog-item{background-color:#fff;padding:8px;margin:5px 0;border-radius:4px;border-left:3px solid #27ae60;}'
     '.version-header{color:#2c3e50;font-weight:bold;margin-bottom:5px;}'
+    '.timeframe-card{background-color:#ffffff;border:2px solid #ecf0f1;border-radius:8px;padding:10px;margin:5px 0;transition:all 0.3s;}'
+    '.timeframe-card:hover{border-color:#3498db;box-shadow:0 2px 8px rgba(52,152,219,0.2);}'
+    '.timeframe-card.selected{border-color:#3498db;background-color:#ebf3fd;}'
+    '.timeframe-info{font-size:0.8rem;color:#7f8c8d;margin-top:5px;}'
     '</style>', 
     unsafe_allow_html=True
 )
@@ -205,6 +345,8 @@ col1, col2 = st.columns([1, 2])
 with col1:
     st.markdown('<div class="sidebar">', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-header">📊 Configuration</div>', unsafe_allow_html=True)
+    
+    # Assets Selection Section
     st.markdown('<div class="sidebar-header">🏠 Select Assets</div>', unsafe_allow_html=True)
     
     # Predefined Assets dropdown
@@ -330,25 +472,57 @@ with col1:
     
     st.markdown("---")
     
-    # Timeframe Settings
-    st.markdown('<div class="sidebar-header">⏰ Timeframe Settings</div>', unsafe_allow_html=True)
+    # Multiple Timeframe Selection
+    st.markdown('<div class="sidebar-header">⏰ Timeframe Selection</div>', unsafe_allow_html=True)
+    st.markdown("**Select Multiple Timeframes:**")
     
-    st.markdown("**Timeframe**")
-    selected_timeframe = st.selectbox(
-        "timeframe",
-        options=list(timeframe_periods.keys()),
-        index=8,
-        label_visibility="collapsed"
-    )
+    # Create timeframe selection with visual cards
+    for tf_key, tf_config in TIMEFRAME_CONFIG.items():
+        col_check, col_info = st.columns([1, 4])
+        
+        with col_check:
+            is_selected = tf_key in st.session_state.selected_timeframes
+            if st.checkbox("", value=is_selected, key=f"tf_{tf_key}", label_visibility="collapsed"):
+                if tf_key not in st.session_state.selected_timeframes:
+                    st.session_state.selected_timeframes.append(tf_key)
+            else:
+                if tf_key in st.session_state.selected_timeframes:
+                    st.session_state.selected_timeframes.remove(tf_key)
+        
+        with col_info:
+            card_class = "timeframe-card selected" if is_selected else "timeframe-card"
+            card_html = f'''
+            <div class="{card_class}">
+                <strong>{tf_config['icon']} {tf_config['name']}</strong>
+                <div class="timeframe-info">
+                    {tf_config['description']}<br>
+                    <em>Recommended: {tf_config['recommended_period']}</em>
+                </div>
+            </div>
+            '''
+            st.markdown(card_html, unsafe_allow_html=True)
     
-    st.markdown("**Period**")
-    available_periods = timeframe_periods[selected_timeframe]
-    selected_period = st.selectbox(
-        "period",
-        options=available_periods,
-        index=0,
-        label_visibility="collapsed"
-    )
+    # Display selected timeframes
+    if st.session_state.selected_timeframes:
+        st.markdown("**Selected Timeframes:**")
+        for tf in st.session_state.selected_timeframes:
+            tf_config = TIMEFRAME_CONFIG[tf]
+            tf_html = f'<div class="selected-timeframe">{tf_config["icon"]} {tf_config["name"]}</div>'
+            st.markdown(tf_html, unsafe_allow_html=True)
+    
+    # Quick timeframe presets
+    st.markdown("**Quick Presets:**")
+    col_preset1, col_preset2 = st.columns(2)
+    
+    with col_preset1:
+        if st.button("📈 Intraday", help="1m, 5m, 15m, 1h", use_container_width=True):
+            st.session_state.selected_timeframes = ['1m', '5m', '15m', '1h']
+            st.rerun()
+    
+    with col_preset2:
+        if st.button("📊 Standard", help="5m, 1h, 1d", use_container_width=True):
+            st.session_state.selected_timeframes = ['5m', '1h', '1d']
+            st.rerun()
     
     st.markdown("---")
     
@@ -356,145 +530,209 @@ with col1:
     sidebar_version = f'<div style="text-align: center; padding: 10px; background-color: #ecf0f1; border-radius: 5px;"><small><strong>v{APP_VERSION}</strong> • {VERSION_DATE}</small></div>'
     st.markdown(sidebar_version, unsafe_allow_html=True)
     
-    # Changelog expander
-    with st.expander("📋 Version History & Changelog"):
-        st.markdown("### Recent Updates")
-        
-        for version, info in list(CHANGELOG.items())[:3]:
-            changes_text = "<br>".join([f"• {change}" for change in info['changes']])
-            changelog_html = f'<div class="changelog-item"><div class="version-header">v{version} - {info["date"]}</div>{changes_text}</div>'
-            st.markdown(changelog_html, unsafe_allow_html=True)
-        
-        if len(CHANGELOG) > 3:
-            st.markdown(f"*...and {len(CHANGELOG) - 3} more versions*")
-        
-        st.markdown("### 🛠️ Technical Details")
-        tech_details = f"- **Framework**: Streamlit {st.__version__}\n"
-        tech_details += "- **Data Source**: Yahoo Finance (yfinance)\n"
-        tech_details += "- **Python Version**: 3.13+\n"
-        tech_details += f"- **Last Updated**: {VERSION_DATE}\n"
-        tech_details += "- **Dependencies**: pandas, yfinance, zipfile"
-        st.markdown(tech_details)
-    
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
     # Main content area
-    header_html = f'<div class="main-header"><h1>📊 YFinance Data Downloader</h1><p>Interactive Trading Data Downloader - v{APP_VERSION}</p></div>'
+    header_html = f'<div class="main-header"><h1>📊 YFinance Data Downloader</h1><p>Multi-Timeframe Trading Data Downloader - v{APP_VERSION}</p></div>'
     st.markdown(header_html, unsafe_allow_html=True)
     
-    # Selected assets summary
-    if st.session_state.selected_assets:
-        st.markdown(f"**👥 Selected: {len(st.session_state.selected_assets)} assets, {selected_timeframe} timeframe**")
+    # Configuration summary
+    if st.session_state.selected_assets and st.session_state.selected_timeframes:
+        st.markdown(f"**👥 Selected: {len(st.session_state.selected_assets)} assets × {len(st.session_state.selected_timeframes)} timeframes = {len(st.session_state.selected_assets) * len(st.session_state.selected_timeframes)} files**")
+        
+        # Show period recommendations for selected timeframes
+        period_recommendations = validate_timeframe_combinations(st.session_state.selected_timeframes)
+        
+        st.markdown("**📋 Automatic Period Selection:**")
+        for tf, period in period_recommendations.items():
+            tf_config = TIMEFRAME_CONFIG[tf]
+            st.markdown(f"• {tf_config['icon']} **{tf_config['name']}**: {period} ({tf_config['description'].split('(')[1].replace(')', '')})")
         
         # Download button
         st.markdown('<div class="download-section">', unsafe_allow_html=True)
         
-        if st.button("🚀 Download Data & Get ZIP File", type="primary", use_container_width=True):
+        if st.button("🚀 Download Multi-Timeframe Data & Get ZIP File", type="primary", use_container_width=True):
             try:
-                with st.spinner('Downloading data...'):
+                # Validate that we have assets and timeframes
+                if not st.session_state.selected_assets:
+                    st.error("❌ Please select at least one asset.")
+                elif not st.session_state.selected_timeframes:
+                    st.error("❌ Please select at least one timeframe.")
+                else:
+                    # Show download progress
+                    total_combinations = len(st.session_state.selected_assets) * len(st.session_state.selected_timeframes)
+                    progress_text = st.empty()
+                    progress_bar = st.progress(0)
+                    
+                    progress_text.text(f'Preparing to download {total_combinations} asset-timeframe combinations...')
+                    
+                    # Download all combinations concurrently
+                    results = download_multiple_assets_timeframes(
+                        st.session_state.selected_assets,
+                        st.session_state.selected_timeframes,
+                        period_recommendations
+                    )
+                    
+                    # Process results and create ZIP file
                     zip_buffer = io.BytesIO()
                     successful_downloads = 0
+                    failed_downloads = []
                     
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                        for asset in st.session_state.selected_assets:
-                            try:
-                                ticker = yf.Ticker(asset)
-                                data = ticker.history(
-                                    period=selected_period,
-                                    interval=selected_timeframe
-                                )
+                        for i, (asset, timeframe, period, data, status) in enumerate(results):
+                            progress_bar.progress((i + 1) / len(results))
+                            progress_text.text(f'Processing {asset} - {TIMEFRAME_CONFIG[timeframe]["name"]} ({i+1}/{len(results)})')
+                            
+                            if status == "success" and not data.empty:
+                                # Create filename with timeframe and period info
+                                filename = f"{asset}_{timeframe}_{period}_{datetime.now().strftime('%Y%m%d')}.csv"
+                                csv_string = data.to_csv()
+                                zip_file.writestr(filename, csv_string)
+                                successful_downloads += 1
                                 
-                                if not data.empty:
-                                    filename = f"{asset}_{selected_timeframe}_{selected_period}.csv"
-                                    csv_string = data.to_csv()
-                                    zip_file.writestr(filename, csv_string)
-                                    successful_downloads += 1
-                                    st.success(f"✅ Downloaded {asset} - {len(data)} records")
-                                else:
-                                    st.warning(f"⚠️ No data found for {asset}")
-                                    
-                            except Exception as e:
-                                st.error(f"❌ Error downloading {asset}: {str(e)}")
+                                # Show success message
+                                tf_config = TIMEFRAME_CONFIG[timeframe]
+                                st.success(f"✅ {asset} - {tf_config['name']} ({period}): {len(data)} records")
+                                
+                            elif status == "no_data":
+                                failed_downloads.append(f"{asset} - {TIMEFRAME_CONFIG[timeframe]['name']}: No data available")
+                                st.warning(f"⚠️ {asset} - {TIMEFRAME_CONFIG[timeframe]['name']}: No data available for {period}")
+                                
+                            else:
+                                failed_downloads.append(f"{asset} - {TIMEFRAME_CONFIG[timeframe]['name']}: {status}")
+                                st.error(f"❌ {asset} - {TIMEFRAME_CONFIG[timeframe]['name']}: {status}")
+                    
+                    progress_text.text('Finalizing ZIP file...')
                     
                     if successful_downloads > 0:
                         zip_buffer.seek(0)
                         
+                        # Create download button
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filename = f"yfinance_multi_timeframe_{timestamp}.zip"
+                        
                         st.download_button(
-                            label="📦 Download ZIP File",
+                            label=f"📦 Download ZIP File ({successful_downloads} files)",
                             data=zip_buffer.getvalue(),
-                            file_name=f"yfinance_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                            file_name=filename,
                             mime="application/zip",
                             use_container_width=True
                         )
                         
-                        st.success(f"🎉 {successful_downloads} files ready for download!")
+                        # Show summary
+                        st.success(f"🎉 Successfully downloaded {successful_downloads} out of {total_combinations} combinations!")
+                        
+                        if failed_downloads:
+                            st.warning(f"⚠️ {len(failed_downloads)} downloads failed or had no data:")
+                            for failure in failed_downloads:
+                                st.write(f"• {failure}")
+                    
                     else:
                         st.error("❌ No data was successfully downloaded. Please check your asset symbols and try again.")
+                    
+                    # Clear progress indicators
+                    progress_text.empty()
+                    progress_bar.empty()
                         
             except Exception as e:
                 st.error(f"❌ An error occurred: {str(e)}")
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Results preview section
+        # Preview section
         st.markdown("### 📈 Data Preview")
         
-        if st.session_state.selected_assets:
-            preview_asset = st.selectbox(
-                "Select asset to preview:",
-                options=st.session_state.selected_assets,
-                key="preview_asset"
-            )
+        if st.session_state.selected_assets and st.session_state.selected_timeframes:
+            col_preview_asset, col_preview_tf = st.columns(2)
+            
+            with col_preview_asset:
+                preview_asset = st.selectbox(
+                    "Select asset to preview:",
+                    options=st.session_state.selected_assets,
+                    key="preview_asset"
+                )
+            
+            with col_preview_tf:
+                preview_timeframe = st.selectbox(
+                    "Select timeframe:",
+                    options=st.session_state.selected_timeframes,
+                    key="preview_timeframe"
+                )
             
             if st.button("Preview Data", use_container_width=True):
                 try:
-                    with st.spinner(f'Loading preview for {preview_asset}...'):
-                        ticker = yf.Ticker(preview_asset)
-                        preview_data = ticker.history(
-                            period=selected_period,
-                            interval=selected_timeframe
+                    period = get_optimal_period_for_timeframe(preview_timeframe)
+                    
+                    with st.spinner(f'Loading preview for {preview_asset} - {TIMEFRAME_CONFIG[preview_timeframe]["name"]}...'):
+                        asset, timeframe, period_used, preview_data, status = download_single_asset_timeframe(
+                            preview_asset, preview_timeframe, period
                         )
                         
-                        if not preview_data.empty:
+                        if status == "success" and not preview_data.empty:
                             st.dataframe(preview_data.head(10), use_container_width=True)
-                            st.info(f"Showing first 10 rows of {len(preview_data)} total records")
+                            st.info(f"Showing first 10 rows of {len(preview_data)} total records for {TIMEFRAME_CONFIG[preview_timeframe]['name']} timeframe")
+                            
+                            # Add a simple line chart for closing prices
+                            if 'Close' in preview_data.columns:
+                                st.line_chart(preview_data['Close'].tail(100), height=300)
+                                st.caption(f"Last 100 closing prices for {preview_asset}")
+                        
+                        elif status == "no_data":
+                            st.warning(f"No data available for {preview_asset} with {TIMEFRAME_CONFIG[preview_timeframe]['name']} timeframe")
                         else:
-                            st.warning(f"No data available for {preview_asset}")
+                            st.error(f"Error loading preview: {status}")
+                            
                 except Exception as e:
                     st.error(f"Error loading preview: {str(e)}")
     
     else:
-        st.info("👈 Please select at least one asset from the sidebar to get started.")
+        # Instructions when nothing is selected
+        missing = []
+        if not st.session_state.selected_assets:
+            missing.append("assets")
+        if not st.session_state.selected_timeframes:
+            missing.append("timeframes")
+        
+        st.info(f"👈 Please select {' and '.join(missing)} from the sidebar to get started.")
+        
+        # Feature highlights
+        st.markdown("### ✨ New Multi-Timeframe Features")
+        
+        features_text = """
+        **🎯 Smart Timeframe Management:**
+        - Select multiple timeframes simultaneously (1m, 2m, 5m, 15m, 1h, 4h, daily)
+        - Automatic period optimization based on yfinance limits
+        - Visual timeframe cards with data availability info
+        
+        **⚡ Performance Improvements:**
+        - Concurrent downloads for faster processing
+        - Cached search results for better responsiveness  
+        - Progress tracking for multi-timeframe downloads
+        
+        **📊 Enhanced Data Handling:**
+        - 4-hour data resampled from 1-hour intervals
+        - Automatic period validation per timeframe
+        - Smart filename generation with timestamps
+        
+        **🎛️ Quick Presets:**
+        - **Intraday**: 1m, 5m, 15m, 1h for day trading
+        - **Standard**: 5m, 1h, 1d for general analysis
+        """
+        
+        st.markdown(features_text)
         
         # Version Info Section
         st.markdown("### ℹ️ App Information")
-        version_html = f'<div class="version-info"><strong>📊 YFinance Data Downloader v{APP_VERSION}</strong><br>Released: {VERSION_DATE}<br>Status: ✅ Active & Updated</div>'
+        version_html = f'<div class="version-info"><strong>📊 YFinance Data Downloader v{APP_VERSION}</strong><br>Released: {VERSION_DATE}<br>Status: ✅ Active & Updated with Multi-Timeframe Support</div>'
         st.markdown(version_html, unsafe_allow_html=True)
-        
-        # Instructions
-        st.markdown("### 📋 How to Use")
-        instructions_text = "1. **Select Assets**: Choose from predefined options or search by company name\n\n"
-        instructions_text += "2. **Configure Timeframe**: Select data interval and period (auto-validated)\n\n"
-        instructions_text += "3. **Download**: Get a ZIP file with CSV data for all selected assets\n\n"
-        instructions_text += "**Enhanced Search Features:**\n"
-        instructions_text += "- **Real-time suggestions** as you type (2+ characters)\n"
-        instructions_text += "- **Popular companies** database with instant results\n"
-        instructions_text += "- **Smart matching** by company name, ticker, or sector\n"
-        instructions_text += "- **Visual indicators** show already selected stocks\n\n"
-        instructions_text += "**Search Examples:**\n"
-        instructions_text += "- Type \"apple\" → Get AAPL instantly\n"
-        instructions_text += "- Type \"tech\" → See technology stocks\n"
-        instructions_text += "- Type \"etf\" → Find popular ETFs\n"
-        instructions_text += "- Type exact symbols like \"MSFT\" for direct match"
-        st.markdown(instructions_text)
 
 # Footer
 st.markdown("---")
 col_footer1, col_footer2, col_footer3 = st.columns([2, 1, 1])
 
 with col_footer1:
-    st.markdown(f"*YFinance Data Downloader v{APP_VERSION} - Perfect for TradingView Pine Script developers.*")
+    st.markdown(f"*YFinance Multi-Timeframe Data Downloader v{APP_VERSION} - Perfect for algorithmic trading and technical analysis.*")
 
 with col_footer2:
     st.markdown("*Data: Yahoo Finance*")
