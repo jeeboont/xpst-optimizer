@@ -225,57 +225,98 @@ POPULAR_ASSETS = {
 
 @st.cache_data(ttl=300)
 def get_instant_suggestions(query):
-    """Get instant suggestions from popular stocks database with caching"""
+    """Get instant suggestions from expanded assets database with caching"""
     if not query or len(query) < 2:
         return []
     
     query_lower = query.lower()
     suggestions = []
     
-    for key, stock in POPULAR_STOCKS.items():
+    # Search through the expanded database
+    for key, asset in POPULAR_ASSETS.items():
         if (query_lower in key or 
-            query_lower in stock['symbol'].lower() or 
-            query_lower in stock['name'].lower()):
-            suggestions.append(stock)
+            query_lower in asset['symbol'].lower() or 
+            query_lower in asset['name'].lower()):
+            suggestions.append(asset)
     
+    # Remove duplicates while preserving order
     seen = set()
     unique_suggestions = []
     for suggestion in suggestions:
         if suggestion['symbol'] not in seen:
             seen.add(suggestion['symbol'])
             unique_suggestions.append(suggestion)
-            if len(unique_suggestions) >= 5:
+            if len(unique_suggestions) >= 8:  # Increased from 5 to show more crypto options
                 break
     
     return unique_suggestions
 
 @st.cache_data(ttl=300)
 def search_ticker(query):
-    """Search for ticker symbols using yfinance with caching"""
+    """Enhanced search for ticker symbols with crypto and forex support"""
     if not query or len(query) < 2:
         return []
     
     try:
         search_results = []
-        variations = [query.upper(), f"{query.upper()}.TO", f"{query.upper()}.L"]
         
-        for variation in variations[:2]:
+        # Create search variations including crypto and forex patterns
+        query_upper = query.upper()
+        variations = [
+            query_upper,                    # Direct symbol
+            f"{query_upper}-USD",          # Crypto pattern
+            f"{query_upper}USD=X",         # Forex pattern  
+            f"USD{query_upper}=X",         # Reverse forex
+            f"{query_upper}=F",            # Futures pattern
+            f"{query_upper}.TO",           # Toronto Stock Exchange
+            f"{query_upper}.L"             # London Stock Exchange
+        ]
+        
+        # For common crypto names, add direct mappings
+        crypto_mappings = {
+            'BITCOIN': 'BTC-USD',
+            'ETHEREUM': 'ETH-USD', 
+            'LITECOIN': 'LTC-USD',
+            'RIPPLE': 'XRP-USD',
+            'CARDANO': 'ADA-USD',
+            'DOGECOIN': 'DOGE-USD',
+            'SOLANA': 'SOL-USD',
+            'POLKADOT': 'DOT-USD',
+            'CHAINLINK': 'LINK-USD',
+            'STELLAR': 'XLM-USD',
+            'AVALANCHE': 'AVAX-USD',
+            'POLYGON': 'MATIC-USD',
+            'BINANCE': 'BNB-USD'
+        }
+        
+        if query_upper in crypto_mappings:
+            variations.insert(0, crypto_mappings[query_upper])
+        
+        # Also check if it's a common abbreviation like LTCUSD
+        if query_upper.endswith('USD') and len(query_upper) > 3:
+            crypto_symbol = query_upper[:-3]  # Remove USD
+            variations.insert(0, f"{crypto_symbol}-USD")
+        
+        for variation in variations[:5]:  # Test first 5 variations to avoid too many API calls
             try:
                 ticker = yf.Ticker(variation)
                 info = ticker.info
                 
-                if info and 'longName' in info and info['longName']:
-                    search_results.append({
-                        'symbol': variation,
-                        'name': info.get('longName', ''),
-                        'sector': info.get('sector', ''),
-                        'exchange': info.get('exchange', '')
-                    })
-                    if len(search_results) >= 3:
-                        break
+                if info and ('longName' in info or 'shortName' in info):
+                    name = info.get('longName') or info.get('shortName') or variation
+                    if name and name != variation:  # Valid if we got a proper name
+                        search_results.append({
+                            'symbol': variation,
+                            'name': name,
+                            'sector': info.get('sector', 'Unknown'),
+                            'exchange': info.get('exchange', 'Unknown')
+                        })
+                        if len(search_results) >= 3:
+                            break
             except:
                 continue
         
+        # Remove duplicates while preserving order
         seen = set()
         unique_results = []
         for result in search_results:
@@ -504,10 +545,12 @@ with col1:
     if not search_query:
         st.markdown("**🔥 Popular Picks:**")
         popular_quick = [
-            {'symbol': 'AAPL', 'name': 'Apple Inc.'},
-            {'symbol': 'TSLA', 'name': 'Tesla, Inc.'},
-            {'symbol': 'NVDA', 'name': 'NVIDIA Corp.'},
-            {'symbol': 'SPY', 'name': 'S&P 500 ETF'}
+            {'symbol': 'BTC-USD', 'name': 'Bitcoin'},
+            {'symbol': 'ETH-USD', 'name': 'Ethereum'},
+            {'symbol': 'LTC-USD', 'name': 'Litecoin'},
+            {'symbol': 'AAPL', 'name': 'Apple'},
+            {'symbol': 'TSLA', 'name': 'Tesla'},
+            {'symbol': 'EURUSD=X', 'name': 'EUR/USD'}
         ]
         
         cols = st.columns(2)
