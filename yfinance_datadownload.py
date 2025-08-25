@@ -69,15 +69,15 @@ predefined_assets = {
     'USDCHF (USD/CHF)': 'USDCHF=X'
 }
 
-# Enhanced timeframe configuration with automatic period limits
+# Universal yfinance data limits (applies to ALL asset classes: stocks, forex, crypto, commodities)
 TIMEFRAME_CONFIG = {
     '1m': {
         'name': '1 Minute',
         'yf_interval': '1m',
         'max_days': 7,
-        'recommended_period': '7d',
-        'available_periods': ['1d', '2d', '3d', '5d', '7d'],
-        'description': 'Intraday 1-minute data (max 7 days)',
+        'recommended_period': '5d',
+        'available_periods': ['1d', '2d', '5d', '7d'],
+        'description': '1-minute data (max 7 days) • Best quality: Stocks > Forex > Crypto',
         'icon': '🟢'
     },
     '2m': {
@@ -85,8 +85,8 @@ TIMEFRAME_CONFIG = {
         'yf_interval': '2m',
         'max_days': 60,
         'recommended_period': '5d',
-        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
-        'description': 'Intraday 2-minute data (max 60 days)',
+        'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
+        'description': '2-minute data (max 60 days) • Universal yfinance limit',
         'icon': '🟢'
     },
     '5m': {
@@ -94,8 +94,8 @@ TIMEFRAME_CONFIG = {
         'yf_interval': '5m',
         'max_days': 60,
         'recommended_period': '5d',
-        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
-        'description': 'Intraday 5-minute data (max 60 days)',
+        'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
+        'description': '5-minute data (max 60 days) • Universal yfinance limit',
         'icon': '🔵'
     },
     '10m': {
@@ -103,7 +103,7 @@ TIMEFRAME_CONFIG = {
         'yf_interval': '15m',  # yfinance doesn't have 10m, use 15m as closest
         'max_days': 60,
         'recommended_period': '5d',
-        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
+        'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
         'description': '15-minute data (closest to 10m, max 60 days)',
         'icon': '🔵'
     },
@@ -111,36 +111,36 @@ TIMEFRAME_CONFIG = {
         'name': '15 Minutes',
         'yf_interval': '15m',
         'max_days': 60,
-        'recommended_period': '5d',
-        'available_periods': ['1d', '2d', '3d', '5d', '7d', '1mo'],
-        'description': 'Intraday 15-minute data (max 60 days)',
+        'recommended_period': '1mo',
+        'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
+        'description': '15-minute data (max 60 days) • Universal yfinance limit',
         'icon': '🔵'
     },
     '1h': {
         'name': '1 Hour',
         'yf_interval': '1h',
-        'max_days': 730,
+        'max_days': 60,
         'recommended_period': '1mo',
-        'available_periods': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y'],
-        'description': 'Hourly data (max 2 years)',
+        'available_periods': ['1d', '5d', '1mo'],
+        'description': 'Hourly data (max 60 days) • Universal intraday limit',
         'icon': '🟡'
     },
     '4h': {
         'name': '4 Hours',
         'yf_interval': '1h',  # Use 1h and resample to 4h later
-        'max_days': 730,
-        'recommended_period': '3mo',
-        'available_periods': ['5d', '1mo', '3mo', '6mo', '1y', '2y'],
-        'description': '4-hour data (resampled from 1h, max 2 years)',
+        'max_days': 60,
+        'recommended_period': '1mo',
+        'available_periods': ['5d', '1mo'],
+        'description': '4-hour data (resampled from 1h, max 60 days)',
         'icon': '🟠'
     },
     '1d': {
         'name': 'Daily',
         'yf_interval': '1d',
-        'max_days': None,  # No limit for daily data
+        'max_days': None,  # No universal limit for daily data
         'recommended_period': '1y',
         'available_periods': ['5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'],
-        'description': 'Daily data (unlimited history)',
+        'description': 'Daily data • Stocks: decades • Forex: since ~2003 • Crypto: since listing',
         'icon': '🔴'
     }
 }
@@ -607,8 +607,8 @@ with col1:
     col_preset1, col_preset2 = st.columns(2)
     
     with col_preset1:
-        if st.button("📈 Intraday", help="1m, 5m, 15m, 1h", use_container_width=True):
-            st.session_state.selected_timeframes = ['1m', '5m', '15m', '1h']
+        if st.button("📈 Intraday", help="1m, 2m, 5m, 15m", use_container_width=True):
+            st.session_state.selected_timeframes = ['1m', '2m', '5m', '15m']
             st.rerun()
     
     with col_preset2:
