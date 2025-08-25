@@ -98,15 +98,6 @@ TIMEFRAME_CONFIG = {
         'description': '5-minute data (max 60 days) • Universal yfinance limit',
         'icon': '🔵'
     },
-    '10m': {
-        'name': '10 Minutes',
-        'yf_interval': '15m',  # yfinance doesn't have 10m, use 15m as closest
-        'max_days': 60,
-        'recommended_period': '1mo',  # Use maximum available (~60 days)
-        'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
-        'description': '15-minute data (closest to 10m, max 60 days)',
-        'icon': '🔵'
-    },
     '15m': {
         'name': '15 Minutes',
         'yf_interval': '15m',
