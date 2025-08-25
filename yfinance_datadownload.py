@@ -145,8 +145,9 @@ TIMEFRAME_CONFIG = {
     }
 }
 
-# Popular stocks database for instant suggestions
-POPULAR_STOCKS = {
+# Enhanced database with stocks, crypto, forex, and commodities for instant suggestions
+POPULAR_ASSETS = {
+    # Stocks
     'apple': {'symbol': 'AAPL', 'name': 'Apple Inc.', 'sector': 'Technology'},
     'microsoft': {'symbol': 'MSFT', 'name': 'Microsoft Corporation', 'sector': 'Technology'},
     'google': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'sector': 'Technology'},
@@ -170,8 +171,56 @@ POPULAR_STOCKS = {
     'nike': {'symbol': 'NKE', 'name': 'NIKE, Inc.', 'sector': 'Consumer'},
     'spy': {'symbol': 'SPY', 'name': 'SPDR S&P 500 ETF Trust', 'sector': 'ETF'},
     'qqq': {'symbol': 'QQQ', 'name': 'Invesco QQQ Trust', 'sector': 'ETF'},
+    
+    # Cryptocurrencies - Major ones
     'bitcoin': {'symbol': 'BTC-USD', 'name': 'Bitcoin USD', 'sector': 'Cryptocurrency'},
+    'btc': {'symbol': 'BTC-USD', 'name': 'Bitcoin USD', 'sector': 'Cryptocurrency'},
     'ethereum': {'symbol': 'ETH-USD', 'name': 'Ethereum USD', 'sector': 'Cryptocurrency'},
+    'eth': {'symbol': 'ETH-USD', 'name': 'Ethereum USD', 'sector': 'Cryptocurrency'},
+    'litecoin': {'symbol': 'LTC-USD', 'name': 'Litecoin USD', 'sector': 'Cryptocurrency'},
+    'ltc': {'symbol': 'LTC-USD', 'name': 'Litecoin USD', 'sector': 'Cryptocurrency'},
+    'ripple': {'symbol': 'XRP-USD', 'name': 'XRP USD', 'sector': 'Cryptocurrency'},
+    'xrp': {'symbol': 'XRP-USD', 'name': 'XRP USD', 'sector': 'Cryptocurrency'},
+    'cardano': {'symbol': 'ADA-USD', 'name': 'Cardano USD', 'sector': 'Cryptocurrency'},
+    'ada': {'symbol': 'ADA-USD', 'name': 'Cardano USD', 'sector': 'Cryptocurrency'},
+    'polkadot': {'symbol': 'DOT-USD', 'name': 'Polkadot USD', 'sector': 'Cryptocurrency'},
+    'dot': {'symbol': 'DOT-USD', 'name': 'Polkadot USD', 'sector': 'Cryptocurrency'},
+    'chainlink': {'symbol': 'LINK-USD', 'name': 'Chainlink USD', 'sector': 'Cryptocurrency'},
+    'link': {'symbol': 'LINK-USD', 'name': 'Chainlink USD', 'sector': 'Cryptocurrency'},
+    'stellar': {'symbol': 'XLM-USD', 'name': 'Stellar USD', 'sector': 'Cryptocurrency'},
+    'xlm': {'symbol': 'XLM-USD', 'name': 'Stellar USD', 'sector': 'Cryptocurrency'},
+    'dogecoin': {'symbol': 'DOGE-USD', 'name': 'Dogecoin USD', 'sector': 'Cryptocurrency'},
+    'doge': {'symbol': 'DOGE-USD', 'name': 'Dogecoin USD', 'sector': 'Cryptocurrency'},
+    'solana': {'symbol': 'SOL-USD', 'name': 'Solana USD', 'sector': 'Cryptocurrency'},
+    'sol': {'symbol': 'SOL-USD', 'name': 'Solana USD', 'sector': 'Cryptocurrency'},
+    'avalanche': {'symbol': 'AVAX-USD', 'name': 'Avalanche USD', 'sector': 'Cryptocurrency'},
+    'avax': {'symbol': 'AVAX-USD', 'name': 'Avalanche USD', 'sector': 'Cryptocurrency'},
+    'polygon': {'symbol': 'MATIC-USD', 'name': 'Polygon USD', 'sector': 'Cryptocurrency'},
+    'matic': {'symbol': 'MATIC-USD', 'name': 'Polygon USD', 'sector': 'Cryptocurrency'},
+    'binance': {'symbol': 'BNB-USD', 'name': 'Binance Coin USD', 'sector': 'Cryptocurrency'},
+    'bnb': {'symbol': 'BNB-USD', 'name': 'Binance Coin USD', 'sector': 'Cryptocurrency'},
+    
+    # Forex Pairs
+    'eurusd': {'symbol': 'EURUSD=X', 'name': 'EUR/USD', 'sector': 'Forex'},
+    'gbpusd': {'symbol': 'GBPUSD=X', 'name': 'GBP/USD', 'sector': 'Forex'},
+    'usdjpy': {'symbol': 'USDJPY=X', 'name': 'USD/JPY', 'sector': 'Forex'},
+    'audusd': {'symbol': 'AUDUSD=X', 'name': 'AUD/USD', 'sector': 'Forex'},
+    'usdcad': {'symbol': 'USDCAD=X', 'name': 'USD/CAD', 'sector': 'Forex'},
+    'nzdusd': {'symbol': 'NZDUSD=X', 'name': 'NZD/USD', 'sector': 'Forex'},
+    'usdchf': {'symbol': 'USDCHF=X', 'name': 'USD/CHF', 'sector': 'Forex'},
+    'eurjpy': {'symbol': 'EURJPY=X', 'name': 'EUR/JPY', 'sector': 'Forex'},
+    'gbpjpy': {'symbol': 'GBPJPY=X', 'name': 'GBP/JPY', 'sector': 'Forex'},
+    'eurgbp': {'symbol': 'EURGBP=X', 'name': 'EUR/GBP', 'sector': 'Forex'},
+    
+    # Commodities
+    'gold': {'symbol': 'GC=F', 'name': 'Gold Futures', 'sector': 'Commodity'},
+    'silver': {'symbol': 'SI=F', 'name': 'Silver Futures', 'sector': 'Commodity'},
+    'oil': {'symbol': 'CL=F', 'name': 'Crude Oil Futures', 'sector': 'Commodity'},
+    'crude': {'symbol': 'CL=F', 'name': 'Crude Oil Futures', 'sector': 'Commodity'},
+    'natgas': {'symbol': 'NG=F', 'name': 'Natural Gas Futures', 'sector': 'Commodity'},
+    'copper': {'symbol': 'HG=F', 'name': 'Copper Futures', 'sector': 'Commodity'},
+    'wheat': {'symbol': 'ZW=F', 'name': 'Wheat Futures', 'sector': 'Commodity'},
+    'corn': {'symbol': 'ZC=F', 'name': 'Corn Futures', 'sector': 'Commodity'},
 }
 
 @st.cache_data(ttl=300)
