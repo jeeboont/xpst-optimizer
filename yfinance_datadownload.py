@@ -75,7 +75,7 @@ TIMEFRAME_CONFIG = {
         'name': '1 Minute',
         'yf_interval': '1m',
         'max_days': 7,
-        'recommended_period': '5d',
+        'recommended_period': '7d',  # Use maximum available
         'available_periods': ['1d', '2d', '5d', '7d'],
         'description': '1-minute data (max 7 days) • Best quality: Stocks > Forex > Crypto',
         'icon': '🟢'
@@ -84,7 +84,7 @@ TIMEFRAME_CONFIG = {
         'name': '2 Minutes',
         'yf_interval': '2m',
         'max_days': 60,
-        'recommended_period': '5d',
+        'recommended_period': '1mo',  # Use maximum available (~60 days)
         'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
         'description': '2-minute data (max 60 days) • Universal yfinance limit',
         'icon': '🟢'
@@ -93,7 +93,7 @@ TIMEFRAME_CONFIG = {
         'name': '5 Minutes',
         'yf_interval': '5m',
         'max_days': 60,
-        'recommended_period': '5d',
+        'recommended_period': '1mo',  # Use maximum available (~60 days)
         'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
         'description': '5-minute data (max 60 days) • Universal yfinance limit',
         'icon': '🔵'
@@ -102,7 +102,7 @@ TIMEFRAME_CONFIG = {
         'name': '10 Minutes',
         'yf_interval': '15m',  # yfinance doesn't have 10m, use 15m as closest
         'max_days': 60,
-        'recommended_period': '5d',
+        'recommended_period': '1mo',  # Use maximum available (~60 days)
         'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
         'description': '15-minute data (closest to 10m, max 60 days)',
         'icon': '🔵'
@@ -111,7 +111,7 @@ TIMEFRAME_CONFIG = {
         'name': '15 Minutes',
         'yf_interval': '15m',
         'max_days': 60,
-        'recommended_period': '1mo',
+        'recommended_period': '1mo',  # Use maximum available (~60 days)
         'available_periods': ['1d', '2d', '5d', '7d', '1mo'],
         'description': '15-minute data (max 60 days) • Universal yfinance limit',
         'icon': '🔵'
@@ -120,7 +120,7 @@ TIMEFRAME_CONFIG = {
         'name': '1 Hour',
         'yf_interval': '1h',
         'max_days': 60,
-        'recommended_period': '1mo',
+        'recommended_period': '1mo',  # Use maximum available (~60 days)
         'available_periods': ['1d', '5d', '1mo'],
         'description': 'Hourly data (max 60 days) • Universal intraday limit',
         'icon': '🟡'
@@ -129,7 +129,7 @@ TIMEFRAME_CONFIG = {
         'name': '4 Hours',
         'yf_interval': '1h',  # Use 1h and resample to 4h later
         'max_days': 60,
-        'recommended_period': '1mo',
+        'recommended_period': '1mo',  # Use maximum available (~60 days)
         'available_periods': ['5d', '1mo'],
         'description': '4-hour data (resampled from 1h, max 60 days)',
         'icon': '🟠'
@@ -138,7 +138,7 @@ TIMEFRAME_CONFIG = {
         'name': 'Daily',
         'yf_interval': '1d',
         'max_days': None,  # No universal limit for daily data
-        'recommended_period': '1y',
+        'recommended_period': '1y',  # Reasonable default for daily data
         'available_periods': ['5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'],
         'description': 'Daily data • Stocks: decades • Forex: since ~2003 • Crypto: since listing',
         'icon': '🔴'
@@ -330,9 +330,18 @@ def search_ticker(query):
         return []
 
 def get_optimal_period_for_timeframe(timeframe: str) -> str:
-    """Get the optimal period for a given timeframe"""
+    """Get the MAXIMUM period available for a given timeframe to download most data"""
     config = TIMEFRAME_CONFIG.get(timeframe, {})
-    return config.get('recommended_period', '1mo')
+    available_periods = config.get('available_periods', ['1mo'])
+    
+    # Return the MAXIMUM period available (last in the list) instead of recommended
+    # This ensures users get the most data possible for each timeframe
+    if timeframe == '1m':
+        return '7d'  # Maximum for 1-minute data
+    elif timeframe in ['2m', '5m', '15m', '1h', '4h']:
+        return '1mo'  # Maximum for other intraday data (60 days)
+    else:
+        return '1y'  # Good default for daily data
 
 def validate_timeframe_combinations(timeframes: List[str]) -> Dict[str, str]:
     """Validate selected timeframes and return recommended periods"""
@@ -636,10 +645,18 @@ with col2:
         # Show period recommendations for selected timeframes
         period_recommendations = validate_timeframe_combinations(st.session_state.selected_timeframes)
         
-        st.markdown("**📋 Automatic Period Selection:**")
+        st.markdown("**📋 Maximum Data Periods (Auto-Selected):**")
         for tf, period in period_recommendations.items():
             tf_config = TIMEFRAME_CONFIG[tf]
-            st.markdown(f"• {tf_config['icon']} **{tf_config['name']}**: {period} ({tf_config['description'].split('(')[1].replace(')', '')})")
+            max_description = ""
+            if tf == '1m':
+                max_description = " (7 days maximum)"
+            elif tf in ['2m', '5m', '15m', '1h', '4h']:
+                max_description = " (~60 days maximum)"
+            else:
+                max_description = " (extensive history)"
+            
+            st.markdown(f"• {tf_config['icon']} **{tf_config['name']}**: {period}{max_description}")
         
         # Download button
         st.markdown('<div class="download-section">', unsafe_allow_html=True)
